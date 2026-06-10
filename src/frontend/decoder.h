@@ -4,12 +4,13 @@
 #include "../core/types.h"
 
 // PPC instruction decoder
-// 6 opcodes so far: addi, addic, ori, lwz, stw, b
+// 7 opcodes so far: addi, addic, addis, ori, lwz, stw, b
 
 typedef enum {
     PPC_OP_UNKNOWN = 0,
     PPC_OP_ADDI,
     PPC_OP_ADDIC,
+    PPC_OP_ADDIS,
     PPC_OP_ORI,
     PPC_OP_LWZ,
     PPC_OP_STW,

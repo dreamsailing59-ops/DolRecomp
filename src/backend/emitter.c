@@ -29,6 +29,28 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
                     inst->rD, inst->rA, (int)inst->simm);
         }
         break;
+    
+    case PPC_OP_ADDIC: {
+        fprintf(out, "    {\n");
+        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + (u64)(s32)(%d);\n", 
+                inst->rA, (int)inst->simm);
+        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
+        fprintf(out, "        // Update XER[CA] (bit 2 / mask 0x20000000)\n");
+        fprintf(out, "        u32 carry = (u32)((res >> 32) & 1);\n");
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (carry << 29);\n");
+        fprintf(out, "    }\n");
+        break;
+    }
+
+    case PPC_OP_ADDIS: // rA=0 means base is literal 0, shift immediate by 16
+        if (inst->rA == 0) {
+            fprintf(out, "    ctx->gpr[%u] = (u32)(inst->simm) << 16;\n",
+                    inst->rD);
+        } else {
+            fprintf(out, "    ctx->gpr[%u] = ctx->gpr[%u] + ((u32)(inst->simm) << 16);\n",
+                    inst->rD, inst->rA);
+        }
+        break;
 
     case PPC_OP_ORI:
         if (inst->rS == 0 && inst->rA == 0 && inst->uimm == 0) {
