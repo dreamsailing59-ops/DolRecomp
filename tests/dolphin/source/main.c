@@ -135,6 +135,8 @@ DEFINE_CR_LOGIC_TEST(dolphin_crandc, crandc)
 DEFINE_CR_LOGIC_TEST(dolphin_creqv, creqv)
 DEFINE_CR_LOGIC_TEST(dolphin_crnand, crnand)
 DEFINE_CR_LOGIC_TEST(dolphin_crnor, crnor)
+DEFINE_CR_LOGIC_TEST(dolphin_crorc, crorc)
+DEFINE_CR_LOGIC_TEST(dolphin_crxor, crxor)
 
 typedef u32 (*cr_logic_test_fn)(u32 seed);
 
@@ -323,11 +325,15 @@ static void test_compare_and_bc(void) {
     static const u8 creqv_expected[4] = {1, 0, 0, 1};
     static const u8 crnand_expected[4] = {1, 1, 1, 0};
     static const u8 crnor_expected[4] = {1, 0, 0, 0};
+    static const u8 crorc_expected[4] = {1, 0, 1, 1};
+    static const u8 crxor_expected[4] = {0, 1, 1, 0};
     check_cr_logic("crand", dolphin_crand, crand_expected);
     check_cr_logic("crandc", dolphin_crandc, crandc_expected);
     check_cr_logic("creqv", dolphin_creqv, creqv_expected);
     check_cr_logic("crnand", dolphin_crnand, crnand_expected);
     check_cr_logic("crnor", dolphin_crnor, crnor_expected);
+    check_cr_logic("crorc", dolphin_crorc, crorc_expected);
+    check_cr_logic("crxor", dolphin_crxor, crxor_expected);
 
     u32 cr_seed = 0x10000000u;
     asm volatile(
@@ -339,6 +345,74 @@ static void test_compare_and_bc(void) {
         : "cr0"
     );
     check_eq((cr >> 29) & 1u, 1, "cror copies true source");
+
+    cr_seed = 0x12345678u;
+    asm volatile(
+        "mtcrf 0xff,%1\n"
+        "mcrf cr2,cr3\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(cr_seed)
+        : "cr0"
+    );
+    check_eq((cr >> 20) & 0xFu, 0x4, "mcrf copies source field");
+    check_eq((cr >> 16) & 0xFu, 0x4, "mcrf leaves source field");
+
+    cr_seed = 0xA5A50000u;
+    asm volatile(
+        "mtcrf 0xff,%1\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(cr_seed)
+        : "cr0"
+    );
+    check_eq(cr, 0xA5A50000u, "mfcr reads CR");
+
+    cr_seed = 0x12345678u;
+    asm volatile(
+        "mtcrf 0xff,%1\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(cr_seed)
+        : "cr0"
+    );
+    check_eq(cr, 0x12345678u, "mtcrf full mask writes CR");
+
+    u32 partial_seed = 0x89ABCDEFu;
+    u32 old_cr = 0x11111111u;
+    asm volatile(
+        "mtcrf 0xff,%2\n"
+        "mtcrf 0x90,%1\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(partial_seed), "r"(old_cr)
+        : "cr0"
+    );
+    check_eq(cr, 0x811B1111u, "mtcrf partial mask writes selected fields");
+
+    cr_seed = 0xFFFFFFFFu;
+    old_cr = 0x2468ACE0u;
+    asm volatile(
+        "mtcrf 0xff,%2\n"
+        "mtcrf 0x00,%1\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(cr_seed), "r"(old_cr)
+        : "cr0"
+    );
+    check_eq(cr, 0x2468ACE0u, "mtcrf zero mask leaves CR");
+
+    cr_seed = 0x0000000Fu;
+    old_cr = 0x12345670u;
+    asm volatile(
+        "mtcrf 0xff,%2\n"
+        "mtcrf 0x01,%1\n"
+        "mfcr %0\n"
+        : "=r"(cr)
+        : "r"(cr_seed), "r"(old_cr)
+        : "cr0"
+    );
+    check_eq(cr, 0x1234567Fu, "mtcrf low mask writes CR7");
 }
 
 static void test_immediate_logical(void) {

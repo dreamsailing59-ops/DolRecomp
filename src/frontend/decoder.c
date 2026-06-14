@@ -12,6 +12,7 @@
 #define PPC_BI(raw)        (((raw) >> 16) & 0x1F)
 #define PPC_XO(raw)        (((raw) >> 1) & 0x3FF)
 #define PPC_SPR(raw)       ((((raw) >> 16) & 0x1F) | (((raw) >> 6) & 0x3E0))
+#define PPC_CRM(raw)       (((raw) >> 12) & 0xFF)
 #define PPC_MB(raw)        (((raw) >> 6) & 0x1F)
 #define PPC_ME(raw)        (((raw) >> 1) & 0x1F)
 #define PPC_SH(raw)        (((raw) >> 11) & 0x1F)
@@ -125,7 +126,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
 
     case 19: {
         u32 xo = PPC_XO(raw);
-        if (xo == 16) {
+        if (xo == 0) {
+            inst.op   = PPC_OP_MCRF;
+            inst.crfD = (raw >> 23) & 0x7;
+            inst.crfS = (raw >> 18) & 0x7;
+        } else if (xo == 16) {
             inst.op = PPC_OP_BCLR;
             inst.bo = PPC_BO(raw);
             inst.bi = PPC_BI(raw);
@@ -137,6 +142,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.rB = PPC_RB(raw);
         } else if (xo == 129) {
             inst.op = PPC_OP_CRANDC;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 193) {
+            inst.op = PPC_OP_CRXOR;
             inst.rD = PPC_RD(raw);
             inst.rA = PPC_RA(raw);
             inst.rB = PPC_RB(raw);
@@ -152,6 +162,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.rB = PPC_RB(raw);
         } else if (xo == 289) {
             inst.op = PPC_OP_CREQV;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 417) {
+            inst.op = PPC_OP_CRORC;
             inst.rD = PPC_RD(raw);
             inst.rA = PPC_RA(raw);
             inst.rB = PPC_RB(raw);
@@ -257,6 +272,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             break;
         case 8:   decode_x_rt_ra_rb(&inst, PPC_OP_SUBFC, raw); break;
         case 10:  decode_x_rt_ra_rb(&inst, PPC_OP_ADDC, raw); break;
+        case 19:
+            inst.op = PPC_OP_MFCR;
+            inst.rD = PPC_RD(raw);
+            break;
         case 23:  decode_x_rt_ra_rb(&inst, PPC_OP_LWZX, raw); break;
         case 24:  decode_x_rs_ra_rb(&inst, PPC_OP_SLW, raw); break;
         case 26:  decode_x_rs_ra_rb(&inst, PPC_OP_CNTLZW, raw); break;
@@ -277,6 +296,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         case 124: decode_x_rs_ra_rb(&inst, PPC_OP_NOR, raw); break;
         case 136: decode_x_rt_ra_rb(&inst, PPC_OP_SUBFE, raw); break;
         case 138: decode_x_rt_ra_rb(&inst, PPC_OP_ADDE, raw); break;
+        case 144:
+            inst.op  = PPC_OP_MTCRF;
+            inst.rS  = PPC_RS(raw);
+            inst.crm = PPC_CRM(raw);
+            break;
         case 151: decode_x_rs_ra_rb(&inst, PPC_OP_STWX, raw); break;
         case 183: decode_x_rs_ra_rb(&inst, PPC_OP_STWUX, raw); break;
         case 200: decode_x_rt_ra_rb(&inst, PPC_OP_SUBFZE, raw); break;
@@ -390,6 +414,11 @@ static const char* opcode_names[PPC_OP_COUNT] = {
     [PPC_OP_CRNAND]  = "crnand",
     [PPC_OP_CRNOR]   = "crnor",
     [PPC_OP_CROR]    = "cror",
+    [PPC_OP_CRORC]   = "crorc",
+    [PPC_OP_CRXOR]   = "crxor",
+    [PPC_OP_MCRF]    = "mcrf",
+    [PPC_OP_MFCR]    = "mfcr",
+    [PPC_OP_MTCRF]   = "mtcrf",
     [PPC_OP_MFSPR]   = "mfspr",
     [PPC_OP_MTSPR]   = "mtspr",
     [PPC_OP_CMP]     = "cmp",
@@ -721,8 +750,25 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
     case PPC_OP_CRNAND:
     case PPC_OP_CRNOR:
     case PPC_OP_CROR:
+    case PPC_OP_CRORC:
+    case PPC_OP_CRXOR:
         snprintf(buf, buf_size, "%-7s %u, %u, %u",
                  ppc_op_name(inst->op), inst->rD, inst->rA, inst->rB);
+        break;
+
+    case PPC_OP_MCRF:
+        snprintf(buf, buf_size, "mcrf    cr%u, cr%u", inst->crfD, inst->crfS);
+        break;
+
+    case PPC_OP_MFCR:
+        snprintf(buf, buf_size, "mfcr    r%u", inst->rD);
+        break;
+
+    case PPC_OP_MTCRF:
+        if (inst->crm == 0xFF)
+            snprintf(buf, buf_size, "mtcr    r%u", inst->rS);
+        else
+            snprintf(buf, buf_size, "mtcrf   0x%02X, r%u", inst->crm, inst->rS);
         break;
 
     case PPC_OP_MFSPR: {

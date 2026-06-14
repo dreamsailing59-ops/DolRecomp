@@ -58,6 +58,14 @@ static u32 make_crform(u32 xo, u32 bt, u32 ba, u32 bb) {
     return (19u << 26) | (bt << 21) | (ba << 16) | (bb << 11) | (xo << 1);
 }
 
+static u32 make_mcrf(u32 crfd, u32 crfs) {
+    return (19u << 26) | (crfd << 23) | (crfs << 18);
+}
+
+static u32 make_mtcrf(u32 rs, u32 crm) {
+    return (31u << 26) | (rs << 21) | (crm << 12) | (144u << 1);
+}
+
 static u32 cr_shift(u8 crf) {
     return 4u * (7u - (u32)crf);
 }
@@ -69,6 +77,15 @@ static u32 get_cr_field(const CPUState* cpu, u8 crf) {
 static void set_cr_field(CPUState* cpu, u8 crf, u32 bits) {
     u32 shift = cr_shift(crf);
     cpu->cr = (cpu->cr & ~(0xFu << shift)) | ((bits & 0xFu) << shift);
+}
+
+static u32 mtcrf_mask(u8 crm) {
+    u32 mask = 0;
+    for (u32 crf = 0; crf < 8; crf++) {
+        if (crm & (0x80u >> crf))
+            mask |= 0xFu << cr_shift((u8)crf);
+    }
+    return mask;
 }
 
 static void set_cr0_from_gpr(CPUState* cpu, u8 reg) {
@@ -641,6 +658,28 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) | cr_bit(cpu, inst->rB));
         break;
 
+    case PPC_OP_CRORC:
+        set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) | !cr_bit(cpu, inst->rB));
+        break;
+
+    case PPC_OP_CRXOR:
+        set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) ^ cr_bit(cpu, inst->rB));
+        break;
+
+    case PPC_OP_MCRF:
+        set_cr_field(cpu, inst->crfD, get_cr_field(cpu, inst->crfS));
+        break;
+
+    case PPC_OP_MFCR:
+        cpu->gpr[inst->rD] = cpu->cr;
+        break;
+
+    case PPC_OP_MTCRF: {
+        u32 mask = mtcrf_mask(inst->crm);
+        cpu->cr = (cpu->cr & ~mask) | (cpu->gpr[inst->rS] & mask);
+        break;
+    }
+
     case PPC_OP_MFSPR:
         if (inst->spr == 1) cpu->gpr[inst->rD] = cpu->xer;
         else if (inst->spr == 8) cpu->gpr[inst->rD] = cpu->lr;
@@ -1156,16 +1195,49 @@ static void test_branches_cr_spr(CPUState* cpu) {
     static const u8 creqv_expected[4] = {1, 0, 0, 1};
     static const u8 crnand_expected[4] = {1, 1, 1, 0};
     static const u8 crnor_expected[4] = {1, 0, 0, 0};
+    static const u8 crorc_expected[4] = {1, 0, 1, 1};
+    static const u8 crxor_expected[4] = {0, 1, 1, 0};
     check_cr_logic(cpu, "crand", 257, crand_expected);
     check_cr_logic(cpu, "crandc", 129, crandc_expected);
     check_cr_logic(cpu, "creqv", 289, creqv_expected);
     check_cr_logic(cpu, "crnand", 225, crnand_expected);
     check_cr_logic(cpu, "crnor", 33, crnor_expected);
+    check_cr_logic(cpu, "crorc", 417, crorc_expected);
+    check_cr_logic(cpu, "crxor", 193, crxor_expected);
 
     cpu->cr = 0;
     set_cr_bit(cpu, 3, 1);
     exec_raw(cpu, make_crform(449, 2, 3, 4), BASE);
     check_eq(cr_bit(cpu, 2), 1, "cror copies true source");
+
+    cpu->cr = 0x12345678;
+    exec_raw(cpu, make_mcrf(2, 3), BASE);
+    check_eq(get_cr_field(cpu, 2), 0x4, "mcrf copies source field");
+    check_eq(get_cr_field(cpu, 3), 0x4, "mcrf leaves source field");
+
+    cpu->cr = 0xA5A50000;
+    exec_raw(cpu, 0x7D400026, BASE);
+    check_eq(cpu->gpr[10], 0xA5A50000, "mfcr reads CR");
+
+    cpu->gpr[10] = 0x12345678;
+    cpu->cr = 0;
+    exec_raw(cpu, make_mtcrf(10, 0xFF), BASE);
+    check_eq(cpu->cr, 0x12345678, "mtcrf full mask writes CR");
+
+    cpu->gpr[10] = 0x89ABCDEF;
+    cpu->cr = 0x11111111;
+    exec_raw(cpu, make_mtcrf(10, 0x90), BASE);
+    check_eq(cpu->cr, 0x811B1111, "mtcrf partial mask writes selected fields");
+
+    cpu->gpr[10] = 0xFFFFFFFF;
+    cpu->cr = 0x2468ACE0;
+    exec_raw(cpu, make_mtcrf(10, 0x00), BASE);
+    check_eq(cpu->cr, 0x2468ACE0, "mtcrf zero mask leaves CR");
+
+    cpu->gpr[10] = 0x0000000F;
+    cpu->cr = 0x12345670;
+    exec_raw(cpu, make_mtcrf(10, 0x01), BASE);
+    check_eq(cpu->cr, 0x1234567F, "mtcrf low mask writes CR7");
 
     cpu->gpr[10] = 0x12345678;
     exec_raw(cpu, 0x7D4803A6, BASE);

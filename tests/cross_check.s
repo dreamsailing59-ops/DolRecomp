@@ -47,6 +47,11 @@ bc 12, 2, branch_target
 blr
 bctr
 cror 2, 3, 4
+crorc 2, 3, 4
+crxor 2, 3, 4
+mcrf cr2, cr3
+mfcr r10
+mtcrf 0xff, r10
 mflr r10
 mtlr r10
 

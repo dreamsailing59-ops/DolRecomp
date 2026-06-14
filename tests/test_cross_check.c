@@ -26,6 +26,8 @@ enum {
     F_MB     = 1u << 15,
     F_ME     = 1u << 16,
     F_SH     = 1u << 17,
+    F_CRFS   = 1u << 18,
+    F_CRM    = 1u << 19,
 };
 
 typedef struct {
@@ -38,6 +40,8 @@ typedef struct {
     u8 rS;
     u8 rB;
     u8 crfD;
+    u8 crfS;
+    u8 crm;
     u8 l;
     u8 bo;
     u8 bi;
@@ -96,6 +100,11 @@ static const DecodeCase cases[] = {
     { "crnand", 0x4C4321C2, PPC_OP_CRNAND, F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
     { "crnor",  0x4C432042, PPC_OP_CRNOR,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
     { "cror",  0x4C432382, PPC_OP_CROR,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "crorc", 0x4C432342, PPC_OP_CRORC, F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "crxor", 0x4C432182, PPC_OP_CRXOR, F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "mcrf",  0x4D0C0000, PPC_OP_MCRF,  F_CRF|F_CRFS, .crfD=2, .crfS=3 },
+    { "mfcr",  0x7D400026, PPC_OP_MFCR,  F_RD, .rD=10 },
+    { "mtcrf", 0x7D4FF120, PPC_OP_MTCRF, F_RS|F_CRM, .rS=10, .crm=0xFF },
     { "mfspr", 0x7D4802A6, PPC_OP_MFSPR, F_RD|F_SPR, .rD=10, .spr=8 },
     { "mtspr", 0x7D4803A6, PPC_OP_MTSPR, F_RS|F_SPR, .rS=10, .spr=8 },
 
@@ -174,7 +183,7 @@ int main(void) {
     int num_cases = (int)(sizeof(cases) / sizeof(cases[0]));
     printf("cross-check: %d opcodes against devkitPPC ground truth\n\n", num_cases);
 
-    check((PPC_OP_COUNT - 1) == 85, -1, "opcode count", PPC_OP_COUNT - 1, 85);
+    check((PPC_OP_COUNT - 1) == 90, -1, "opcode count", PPC_OP_COUNT - 1, 90);
 
     for (int n = 0; n < num_cases; n++) {
         const DecodeCase* c = &cases[n];
@@ -191,6 +200,8 @@ int main(void) {
         if (c->fields & F_RS)     check(inst.rS == c->rS, n, "rS", inst.rS, c->rS);
         if (c->fields & F_RB)     check(inst.rB == c->rB, n, "rB", inst.rB, c->rB);
         if (c->fields & F_CRF)    check(inst.crfD == c->crfD, n, "crfD", inst.crfD, c->crfD);
+        if (c->fields & F_CRFS)   check(inst.crfS == c->crfS, n, "crfS", inst.crfS, c->crfS);
+        if (c->fields & F_CRM)    check(inst.crm == c->crm, n, "crm", inst.crm, c->crm);
         if (c->fields & F_L)      check(inst.l == c->l, n, "l", inst.l, c->l);
         if (c->fields & F_BO)     check(inst.bo == c->bo, n, "bo", inst.bo, c->bo);
         if (c->fields & F_BI)     check(inst.bi == c->bi, n, "bi", inst.bi, c->bi);

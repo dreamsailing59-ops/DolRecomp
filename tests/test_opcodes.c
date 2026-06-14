@@ -65,6 +65,11 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x4C4321C2, PPC_OP_CRNAND, "crnand" },
     { 0x4C432042, PPC_OP_CRNOR, "crnor" },
     { 0x4C432382, PPC_OP_CROR, "cror" },
+    { 0x4C432342, PPC_OP_CRORC, "crorc" },
+    { 0x4C432182, PPC_OP_CRXOR, "crxor" },
+    { 0x4D0C0000, PPC_OP_MCRF, "mcrf" },
+    { 0x7D400026, PPC_OP_MFCR, "mfcr" },
+    { 0x7D4FF120, PPC_OP_MTCRF, "mtcrf" },
     { 0x7D4802A6, PPC_OP_MFSPR, "mfspr" },
     { 0x7D4803A6, PPC_OP_MTSPR, "mtspr" },
     { 0x7C832000, PPC_OP_CMP, "cmp" },
@@ -134,16 +139,16 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 85\n");
-    CHECK(PPC_OP_COUNT - 1 == 85, "should expose 85 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 90\n");
+    CHECK(PPC_OP_COUNT - 1 == 90, "should expose 90 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 85-opcode set\n");
+    printf("  decode every opcode in the current 90-opcode set\n");
 
-    CHECK(count == 85, "opcode table should have 85 entries, got %d", count);
+    CHECK(count == 90, "opcode table should have 90 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
         PPCInst inst = ppc_decode(opcode_cases[i].raw, BASE + (u32)(i * 4));
@@ -175,6 +180,18 @@ static int test_pseudoops_and_display(void) {
     ppc_disasm(buf, sizeof(buf), &inst);
     CHECK(strcmp(buf, "cmpw    cr1, r3, r4") == 0, "cmpw CR disasm, got '%s'", buf);
 
+    inst = ppc_decode(0x4D0C0000, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "mcrf    cr2, cr3") == 0, "mcrf disasm, got '%s'", buf);
+
+    inst = ppc_decode(0x7D4FF120, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "mtcr    r10") == 0, "mtcr disasm, got '%s'", buf);
+
+    inst = ppc_decode(0x7D490120, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "mtcrf   0x90, r10") == 0, "mtcrf disasm, got '%s'", buf);
+
     return 1;
 }
 
@@ -197,6 +214,14 @@ static int test_field_edges(void) {
     CHECK(inst.rD == 2, "cror dest bit should be 2");
     CHECK(inst.rA == 3, "cror source A bit should be 3");
     CHECK(inst.rB == 4, "cror source B bit should be 4");
+
+    inst = ppc_decode(0x4D0C0000, BASE);
+    CHECK(inst.crfD == 2, "mcrf dest field should be cr2");
+    CHECK(inst.crfS == 3, "mcrf source field should be cr3");
+
+    inst = ppc_decode(0x7D490120, BASE);
+    CHECK(inst.rS == 10, "mtcrf source register should be r10");
+    CHECK(inst.crm == 0x90, "mtcrf mask should be 0x90");
 
     return 1;
 }

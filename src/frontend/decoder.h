@@ -48,6 +48,11 @@ typedef enum {
     PPC_OP_CRNAND,
     PPC_OP_CRNOR,
     PPC_OP_CROR,
+    PPC_OP_CRORC,
+    PPC_OP_CRXOR,
+    PPC_OP_MCRF,
+    PPC_OP_MFCR,
+    PPC_OP_MTCRF,
     PPC_OP_MFSPR,
     PPC_OP_MTSPR,
     PPC_OP_CMP,
@@ -106,6 +111,8 @@ typedef struct {
     u8  rS;
     u8  rB;
     u8  crfD;
+    u8  crfS;
+    u8  crm;
     u8  l;
     u8  bo;
     u8  bi;

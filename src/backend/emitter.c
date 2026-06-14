@@ -635,6 +635,38 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
     case PPC_OP_CRNAND: emit_cr_logical(out, inst, "~(a & b)"); break;
     case PPC_OP_CRNOR:  emit_cr_logical(out, inst, "~(a | b)"); break;
     case PPC_OP_CROR:   emit_cr_logical(out, inst, "a | b"); break;
+    case PPC_OP_CRORC:  emit_cr_logical(out, inst, "a | ~b"); break;
+    case PPC_OP_CRXOR:  emit_cr_logical(out, inst, "a ^ b"); break;
+
+    case PPC_OP_MCRF: {
+        u32 dst_shift = cr_field_shift(inst->crfD);
+        u32 src_shift = cr_field_shift(inst->crfS);
+        fprintf(out, "    {\n");
+        fprintf(out, "        u32 bits = (ctx->cr >> %u) & 0xFu;\n", src_shift);
+        fprintf(out, "        ctx->cr = (ctx->cr & ~(0xFu << %u)) | (bits << %u);\n",
+                dst_shift, dst_shift);
+        fprintf(out, "    }\n");
+        break;
+    }
+
+    case PPC_OP_MFCR:
+        fprintf(out, "    ctx->gpr[%u] = ctx->cr;\n", inst->rD);
+        break;
+
+    case PPC_OP_MTCRF: {
+        u32 mask = 0;
+        for (u32 crf = 0; crf < 8; crf++) {
+            if (inst->crm & (0x80u >> crf))
+                mask |= 0xFu << cr_field_shift((u8)crf);
+        }
+        if (mask) {
+            fprintf(out, "    ctx->cr = (ctx->cr & ~0x%08Xu) | (ctx->gpr[%u] & 0x%08Xu);\n",
+                    mask, inst->rS, mask);
+        } else {
+            fprintf(out, "    // mtcrf mask selects no CR fields\n");
+        }
+        break;
+    }
 
     case PPC_OP_MFSPR:
         switch (inst->spr) {
