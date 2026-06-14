@@ -59,6 +59,11 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x418200C4, PPC_OP_BC, "bc" },
     { 0x4E800020, PPC_OP_BCLR, "bclr" },
     { 0x4E800420, PPC_OP_BCCTR, "bcctr" },
+    { 0x4C432202, PPC_OP_CRAND, "crand" },
+    { 0x4C432102, PPC_OP_CRANDC, "crandc" },
+    { 0x4C432242, PPC_OP_CREQV, "creqv" },
+    { 0x4C4321C2, PPC_OP_CRNAND, "crnand" },
+    { 0x4C432042, PPC_OP_CRNOR, "crnor" },
     { 0x4C432382, PPC_OP_CROR, "cror" },
     { 0x7D4802A6, PPC_OP_MFSPR, "mfspr" },
     { 0x7D4803A6, PPC_OP_MTSPR, "mtspr" },
@@ -129,16 +134,16 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 80\n");
-    CHECK(PPC_OP_COUNT - 1 == 80, "should expose 80 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 85\n");
+    CHECK(PPC_OP_COUNT - 1 == 85, "should expose 85 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 80-opcode set\n");
+    printf("  decode every opcode in the current 85-opcode set\n");
 
-    CHECK(count == 80, "opcode table should have 80 entries, got %d", count);
+    CHECK(count == 85, "opcode table should have 85 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
         PPCInst inst = ppc_decode(opcode_cases[i].raw, BASE + (u32)(i * 4));

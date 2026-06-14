@@ -130,6 +130,31 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.bo = PPC_BO(raw);
             inst.bi = PPC_BI(raw);
             inst.lk = raw & 1;
+        } else if (xo == 33) {
+            inst.op = PPC_OP_CRNOR;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 129) {
+            inst.op = PPC_OP_CRANDC;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 225) {
+            inst.op = PPC_OP_CRNAND;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 257) {
+            inst.op = PPC_OP_CRAND;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+        } else if (xo == 289) {
+            inst.op = PPC_OP_CREQV;
+            inst.rD = PPC_RD(raw);
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
         } else if (xo == 449) {
             inst.op = PPC_OP_CROR;
             inst.rD = PPC_RD(raw);
@@ -359,6 +384,11 @@ static const char* opcode_names[PPC_OP_COUNT] = {
     [PPC_OP_BC]      = "bc",
     [PPC_OP_BCLR]    = "bclr",
     [PPC_OP_BCCTR]   = "bcctr",
+    [PPC_OP_CRAND]   = "crand",
+    [PPC_OP_CRANDC]  = "crandc",
+    [PPC_OP_CREQV]   = "creqv",
+    [PPC_OP_CRNAND]  = "crnand",
+    [PPC_OP_CRNOR]   = "crnor",
     [PPC_OP_CROR]    = "cror",
     [PPC_OP_MFSPR]   = "mfspr",
     [PPC_OP_MTSPR]   = "mtspr",
@@ -685,8 +715,14 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
         }
         break;
 
+    case PPC_OP_CRAND:
+    case PPC_OP_CRANDC:
+    case PPC_OP_CREQV:
+    case PPC_OP_CRNAND:
+    case PPC_OP_CRNOR:
     case PPC_OP_CROR:
-        snprintf(buf, buf_size, "cror    %u, %u, %u", inst->rD, inst->rA, inst->rB);
+        snprintf(buf, buf_size, "%-7s %u, %u, %u",
+                 ppc_op_name(inst->op), inst->rD, inst->rA, inst->rB);
         break;
 
     case PPC_OP_MFSPR: {

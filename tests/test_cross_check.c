@@ -90,6 +90,11 @@ static const DecodeCase cases[] = {
     { "bc",    0x418200C4, PPC_OP_BC,    F_BO|F_BI|F_TARGET|F_AA|F_LK, .bo=12, .bi=2, .target=BASE+0x140, .aa=false, .lk=false },
     { "bclr",  0x4E800020, PPC_OP_BCLR,  F_BO|F_BI|F_LK, .bo=20, .bi=0, .lk=false },
     { "bcctr", 0x4E800420, PPC_OP_BCCTR, F_BO|F_BI|F_LK, .bo=20, .bi=0, .lk=false },
+    { "crand",  0x4C432202, PPC_OP_CRAND,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "crandc", 0x4C432102, PPC_OP_CRANDC, F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "creqv",  0x4C432242, PPC_OP_CREQV,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "crnand", 0x4C4321C2, PPC_OP_CRNAND, F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
+    { "crnor",  0x4C432042, PPC_OP_CRNOR,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
     { "cror",  0x4C432382, PPC_OP_CROR,  F_RD|F_RA|F_RB, .rD=2, .rA=3, .rB=4 },
     { "mfspr", 0x7D4802A6, PPC_OP_MFSPR, F_RD|F_SPR, .rD=10, .spr=8 },
     { "mtspr", 0x7D4803A6, PPC_OP_MTSPR, F_RS|F_SPR, .rS=10, .spr=8 },
@@ -169,7 +174,7 @@ int main(void) {
     int num_cases = (int)(sizeof(cases) / sizeof(cases[0]));
     printf("cross-check: %d opcodes against devkitPPC ground truth\n\n", num_cases);
 
-    check((PPC_OP_COUNT - 1) == 80, -1, "opcode count", PPC_OP_COUNT - 1, 80);
+    check((PPC_OP_COUNT - 1) == 85, -1, "opcode count", PPC_OP_COUNT - 1, 85);
 
     for (int n = 0; n < num_cases; n++) {
         const DecodeCase* c = &cases[n];

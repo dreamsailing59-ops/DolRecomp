@@ -173,6 +173,16 @@ static void emit_dynamic_branch(FILE* out, const PPCInst* inst,
     fprintf(out, "    }\n");
 }
 
+static void emit_cr_logical(FILE* out, const PPCInst* inst, const char* expr) {
+    fprintf(out, "    {\n");
+    fprintf(out, "        u32 a = (ctx->cr >> (31u - %uu)) & 1u;\n", inst->rA);
+    fprintf(out, "        u32 b = (ctx->cr >> (31u - %uu)) & 1u;\n", inst->rB);
+    fprintf(out, "        u32 mask = 0x80000000u >> %u;\n", inst->rD);
+    fprintf(out, "        u32 value = (%s) & 1u;\n", expr);
+    fprintf(out, "        ctx->cr = (ctx->cr & ~mask) | (value ? mask : 0u);\n");
+    fprintf(out, "    }\n");
+}
+
 static void emit_record_if_needed(FILE* out, const PPCInst* inst, u8 reg) {
     if (inst->rc) {
         emit_set_cr0_from_gpr(out, reg);
@@ -619,14 +629,12 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
         emit_dynamic_branch(out, inst, "ctx->ctr & ~3u");
         break;
 
-    case PPC_OP_CROR:
-        fprintf(out, "    {\n");
-        fprintf(out, "        u32 a = (ctx->cr >> (31u - %uu)) & 1u;\n", inst->rA);
-        fprintf(out, "        u32 b = (ctx->cr >> (31u - %uu)) & 1u;\n", inst->rB);
-        fprintf(out, "        u32 mask = 0x80000000u >> %u;\n", inst->rD);
-        fprintf(out, "        ctx->cr = (ctx->cr & ~mask) | ((a | b) ? mask : 0u);\n");
-        fprintf(out, "    }\n");
-        break;
+    case PPC_OP_CRAND:  emit_cr_logical(out, inst, "a & b"); break;
+    case PPC_OP_CRANDC: emit_cr_logical(out, inst, "a & ~b"); break;
+    case PPC_OP_CREQV:  emit_cr_logical(out, inst, "~(a ^ b)"); break;
+    case PPC_OP_CRNAND: emit_cr_logical(out, inst, "~(a & b)"); break;
+    case PPC_OP_CRNOR:  emit_cr_logical(out, inst, "~(a | b)"); break;
+    case PPC_OP_CROR:   emit_cr_logical(out, inst, "a | b"); break;
 
     case PPC_OP_MFSPR:
         switch (inst->spr) {

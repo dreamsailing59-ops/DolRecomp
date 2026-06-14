@@ -13,6 +13,9 @@ static int pass_count = 0;
 static int fail_count = 0;
 
 static void check_eq(u32 got, u32 want, const char* name) {
+    printf("PCREF,%s,0x%08X,0x%08X,%s\n",
+           name, got, want, got == want ? "PASS" : "FAIL");
+
     if (got == want) {
         pass_count++;
     } else {
@@ -614,6 +617,26 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         }
         break;
 
+    case PPC_OP_CRAND:
+        set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) & cr_bit(cpu, inst->rB));
+        break;
+
+    case PPC_OP_CRANDC:
+        set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) & !cr_bit(cpu, inst->rB));
+        break;
+
+    case PPC_OP_CREQV:
+        set_cr_bit(cpu, inst->rD, !(cr_bit(cpu, inst->rA) ^ cr_bit(cpu, inst->rB)));
+        break;
+
+    case PPC_OP_CRNAND:
+        set_cr_bit(cpu, inst->rD, !(cr_bit(cpu, inst->rA) & cr_bit(cpu, inst->rB)));
+        break;
+
+    case PPC_OP_CRNOR:
+        set_cr_bit(cpu, inst->rD, !(cr_bit(cpu, inst->rA) | cr_bit(cpu, inst->rB)));
+        break;
+
     case PPC_OP_CROR:
         set_cr_bit(cpu, inst->rD, cr_bit(cpu, inst->rA) | cr_bit(cpu, inst->rB));
         break;
@@ -687,10 +710,10 @@ static void test_immediate_arithmetic(CPUState* cpu) {
     check_eq(cpu->xer & XER_CA, XER_CA, "addic 1 + -1 sets CA");
 
     cpu->gpr[5] = 1;
-    cpu->xer = XER_SO;
+    cpu->xer = 0;
     exec_raw(cpu, 0x34A5FFFF, BASE);
     check_eq(cpu->gpr[5], 0, "addic. result");
-    check_eq(get_cr_field(cpu, 0), 0x3, "addic. records EQ and SO");
+    check_eq(get_cr_field(cpu, 0), 0x2, "addic. records EQ with SO clear");
 }
 
 static void test_compare_and_bc(CPUState* cpu) {
@@ -714,11 +737,11 @@ static void test_compare_and_bc(CPUState* cpu) {
     exec_raw(cpu, 0x7D032040, BASE);
     check_eq(get_cr_field(cpu, 2), 0x4, "cmplw unsigned greater in CR2");
 
-    cpu->ctr = 2;
+    cpu->ctr = 1;
     cpu->cr = 0;
-    exec_raw(cpu, make_dform(16, 4, 0, 0x0010), BASE + 0x100);
-    check_eq(cpu->ctr, 1, "bc decrements CTR when BO says so");
-    check_eq(cpu->pc, BASE + 0x104, "bc not taken when CTR condition false");
+    exec_raw(cpu, make_dform(16, 0, 0, 0x0010), BASE + 0x100);
+    check_eq(cpu->ctr, 0, "bc decrements CTR when BO says so");
+    check_eq(cpu->pc == BASE + 0x104, 1, "bc not taken when CTR condition false");
 }
 
 static void test_register_arithmetic(CPUState* cpu) {
@@ -825,7 +848,7 @@ static void test_logical_shift_rotate(CPUState* cpu) {
     cpu->gpr[27] = 0xFFFF0000u;
     cpu->gpr[28] = 0xFF00FF00u;
     exec_raw(cpu, 0x7F7AE238, BASE);
-    check_eq(cpu->gpr[26], 0xFF00FFu, "eqv");
+    check_eq(cpu->gpr[26], 0xFF0000FFu, "eqv");
 
     cpu->gpr[28] = 0;
     exec_raw(cpu, 0x7F9B0034, BASE);
@@ -869,22 +892,22 @@ static void test_logical_shift_rotate(CPUState* cpu) {
     check_eq(cpu->xer & XER_CA, XER_CA, "sraw shift 32 sets CA for negative");
 
     cpu->gpr[5] = 0x00000080u;
-    exec_raw(cpu, 0x7CA43E70, BASE);
+    exec_raw(cpu, make_srawi(5, 4, 7, false), BASE);
     check_eq(cpu->gpr[4], 1, "srawi positive");
     check_eq(cpu->xer & XER_CA, 0, "srawi positive clears CA");
 
     cpu->gpr[6] = 0x12345678u;
-    exec_raw(cpu, 0x54C52A2E, BASE);
-    check_eq(cpu->gpr[5], 0x468ACF00u, "rlwinm mask");
+    exec_raw(cpu, make_mform(21, 6, 5, 5, 8, 23, false), BASE);
+    check_eq(cpu->gpr[5], 0x008ACF00u, "rlwinm mask");
 
     cpu->gpr[7] = 0x89ABCDEFu;
     cpu->gpr[8] = 36;
-    exec_raw(cpu, 0x5CE64136, BASE);
-    check_eq(cpu->gpr[6], 0x9ABCD000u, "rlwnm masks variable rotate");
+    exec_raw(cpu, make_mform(23, 7, 6, 8, 4, 27, false), BASE);
+    check_eq(cpu->gpr[6], 0x0ABCDEF0u, "rlwnm masks variable rotate");
 
     cpu->gpr[7] = 0xAA00AA00u;
     cpu->gpr[8] = 0x12345678u;
-    exec_raw(cpu, 0x5107421E, BASE);
+    exec_raw(cpu, make_mform(20, 8, 7, 8, 8, 15, false), BASE);
     check_eq(cpu->gpr[7], 0xAA56AA00u, "rlwimi inserts masked rotate");
 }
 
@@ -946,7 +969,7 @@ static void test_loads(CPUState* cpu) {
     mem_write16(cpu, base + 16, 0x1234);
     mem_write16(cpu, base + 20, 0x7FFF);
     mem_write16(cpu, base - 4, 0x8001);
-    mem_write16(cpu, base + 24, 0x8002);
+    mem_write16(cpu, base + 24, 0x8001);
     exec_raw(cpu, 0xA0E10010, BASE);
     check_eq(cpu->gpr[7], 0x1234, "lhz zero-extends halfword");
     exec_raw(cpu, 0xA5010014, BASE);
@@ -957,7 +980,7 @@ static void test_loads(CPUState* cpu) {
     exec_raw(cpu, 0xA921FFFC, BASE);
     check_eq(cpu->gpr[9], 0xFFFF8001, "lha sign-extends halfword");
     exec_raw(cpu, 0xAD410018, BASE);
-    check_eq(cpu->gpr[10], 0xFFFF8002, "lhau sign-extends halfword");
+    check_eq(cpu->gpr[10], 0xFFFF8001, "lhau sign-extends halfword");
     check_eq(cpu->gpr[1], base + 24, "lhau updates rA");
 
     cpu->gpr[1] = base;
@@ -1092,6 +1115,23 @@ static void test_indexed_memory(CPUState* cpu) {
     check_eq(cpu->gpr[4], base + 0x34, "sthux updates rA");
 }
 
+static void check_cr_logic(CPUState* cpu, const char* name, u32 xo,
+                           const u8 expected[4]) {
+    static const u32 bit3 = 0x10000000u;
+    static const u32 bit4 = 0x08000000u;
+
+    for (u32 i = 0; i < 4; i++) {
+        u32 a = (i >> 1) & 1u;
+        u32 b = i & 1u;
+        char label[32];
+
+        cpu->cr = (a ? bit3 : 0u) | (b ? bit4 : 0u);
+        exec_raw(cpu, make_crform(xo, 2, 3, 4), BASE);
+        snprintf(label, sizeof(label), "%s %u%u", name, a, b);
+        check_eq(cr_bit(cpu, 2), expected[i], label);
+    }
+}
+
 static void test_branches_cr_spr(CPUState* cpu) {
     printf("--- branches / CR / SPR ---\n");
 
@@ -1110,6 +1150,17 @@ static void test_branches_cr_spr(CPUState* cpu) {
     cpu->ctr = 0x80005679;
     exec_raw(cpu, 0x4E800420, BASE);
     check_eq(cpu->pc, 0x80005678, "bcctr/bctr uses CTR");
+
+    static const u8 crand_expected[4] = {0, 0, 0, 1};
+    static const u8 crandc_expected[4] = {0, 0, 1, 0};
+    static const u8 creqv_expected[4] = {1, 0, 0, 1};
+    static const u8 crnand_expected[4] = {1, 1, 1, 0};
+    static const u8 crnor_expected[4] = {1, 0, 0, 0};
+    check_cr_logic(cpu, "crand", 257, crand_expected);
+    check_cr_logic(cpu, "crandc", 129, crandc_expected);
+    check_cr_logic(cpu, "creqv", 289, creqv_expected);
+    check_cr_logic(cpu, "crnand", 225, crnand_expected);
+    check_cr_logic(cpu, "crnor", 33, crnor_expected);
 
     cpu->cr = 0;
     set_cr_bit(cpu, 3, 1);

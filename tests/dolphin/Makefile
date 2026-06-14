@@ -9,7 +9,7 @@ ELF2DOL := $(DEVKITPRO)/tools/bin/elf2dol
 MACHDEP := -DGEKKO -mogc -mcpu=750 -meabi -mhard-float
 CFLAGS  := $(MACHDEP) -O0 -Wall -g -I$(LIBOGC)/include
 LDFLAGS := $(MACHDEP) -L$(LIBOGC)/lib/cube -Wl,-Map,test_opcodes.map
-LIBS    := -logc -lm
+LIBS    := -lfat -logc -lm
 
 all: test_opcodes.dol
 
