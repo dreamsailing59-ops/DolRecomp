@@ -75,6 +75,12 @@ static void decode_fcmp(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->rB = PPC_RB(raw);
 }
 
+static void decode_mtfsb(PPCInst* inst, PPCOpcode op, u32 raw) {
+    inst->op = op;
+    inst->rD = PPC_RD(raw);
+    inst->rc = PPC_RC(raw);
+}
+
 static void decode_psq_d_rt_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->op = op;
     inst->rD = PPC_RD(raw);
@@ -119,13 +125,46 @@ PPCInst ppc_decode(u32 raw, u32 address) {
 
     switch (PPC_PRIMARY(raw)) {
     case 4: {
-        u32 psxo = PPC_XO(raw) & 0x3Fu;
-        switch (psxo) {
-        case 6:  decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LX, raw); break;
-        case 7:  decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STX, raw); break;
-        case 38: decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LUX, raw); break;
-        case 39: decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STUX, raw); break;
-        default: inst.op = PPC_OP_UNKNOWN; break;
+        u32 xo = PPC_XO(raw);
+        switch (xo) {
+        case 0:   decode_fcmp(&inst, PPC_OP_PS_CMPU0, raw); break;
+        case 18:  decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_DIV, raw); break;
+        case 20:  decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUB, raw); break;
+        case 21:  decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_ADD, raw); break;
+        case 32:  decode_fcmp(&inst, PPC_OP_PS_CMPO0, raw); break;
+        case 40:  decode_x_frt_frb(&inst, PPC_OP_PS_NEG, raw); break;
+        case 64:  decode_fcmp(&inst, PPC_OP_PS_CMPU1, raw); break;
+        case 72:  decode_x_frt_frb(&inst, PPC_OP_PS_MR, raw); break;
+        case 96:  decode_fcmp(&inst, PPC_OP_PS_CMPO1, raw); break;
+        case 136: decode_x_frt_frb(&inst, PPC_OP_PS_NABS, raw); break;
+        case 264: decode_x_frt_frb(&inst, PPC_OP_PS_ABS, raw); break;
+        case 313: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MUL, raw); break;
+        case 362: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM0, raw); break;
+        case 491: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM1, raw); break;
+        case 509: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADD, raw); break;
+        case 528: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE00, raw); break;
+        case 560: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE01, raw); break;
+        case 592: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE10, raw); break;
+        case 620: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS0, raw); break;
+        case 624: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE11, raw); break;
+        case 636: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MSUB, raw); break;
+        case 717: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS1, raw); break;
+        case 759: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SEL, raw); break;
+        case 767: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMADD, raw); break;
+        case 814: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS0, raw); break;
+        case 894: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMSUB, raw); break;
+        case 943: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS1, raw); break;
+        default: {
+            u32 psxo = xo & 0x3Fu;
+            switch (psxo) {
+            case 6:  decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LX, raw); break;
+            case 7:  decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STX, raw); break;
+            case 38: decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LUX, raw); break;
+            case 39: decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STUX, raw); break;
+            default: inst.op = PPC_OP_UNKNOWN; break;
+            }
+            break;
+        }
         }
         break;
     }
@@ -486,7 +525,9 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         case 0:   decode_fcmp(&inst, PPC_OP_FCMPU, raw); break;
         case 12:  decode_x_frt_frb(&inst, PPC_OP_FRSP, raw); break;
         case 32:  decode_fcmp(&inst, PPC_OP_FCMPO, raw); break;
+        case 38:  decode_mtfsb(&inst, PPC_OP_MTFSB1, raw); break;
         case 40:  decode_x_frt_frb(&inst, PPC_OP_FNEG, raw); break;
+        case 70:  decode_mtfsb(&inst, PPC_OP_MTFSB0, raw); break;
         case 72:  decode_x_frt_frb(&inst, PPC_OP_FMR, raw); break;
         case 136: decode_x_frt_frb(&inst, PPC_OP_FNABS, raw); break;
         case 264: decode_x_frt_frb(&inst, PPC_OP_FABS, raw); break;
@@ -495,6 +536,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             case 18: decode_a_frt_fra_frb_frc(&inst, PPC_OP_FDIV, raw); break;
             case 20: decode_a_frt_fra_frb_frc(&inst, PPC_OP_FSUB, raw); break;
             case 21: decode_a_frt_fra_frb_frc(&inst, PPC_OP_FADD, raw); break;
+            case 23: decode_a_frt_fra_frb_frc(&inst, PPC_OP_FSEL, raw); break;
             case 25: decode_a_frt_fra_frb_frc(&inst, PPC_OP_FMUL, raw); break;
             default: inst.op = PPC_OP_UNKNOWN; break;
             }
@@ -635,8 +677,11 @@ static const char* opcode_names[PPC_OP_COUNT] = {
     [PPC_OP_FABS]    = "fabs",
     [PPC_OP_FNABS]   = "fnabs",
     [PPC_OP_FRSP]    = "frsp",
+    [PPC_OP_FSEL]    = "fsel",
     [PPC_OP_FCMPU]   = "fcmpu",
     [PPC_OP_FCMPO]   = "fcmpo",
+    [PPC_OP_MTFSB0]  = "mtfsb0",
+    [PPC_OP_MTFSB1]  = "mtfsb1",
     [PPC_OP_PSQ_L]   = "psq_l",
     [PPC_OP_PSQ_LU]  = "psq_lu",
     [PPC_OP_PSQ_ST]  = "psq_st",
@@ -645,6 +690,33 @@ static const char* opcode_names[PPC_OP_COUNT] = {
     [PPC_OP_PSQ_LUX] = "psq_lux",
     [PPC_OP_PSQ_STX] = "psq_stx",
     [PPC_OP_PSQ_STUX] = "psq_stux",
+    [PPC_OP_PS_ADD]  = "ps_add",
+    [PPC_OP_PS_SUB]  = "ps_sub",
+    [PPC_OP_PS_MUL]  = "ps_mul",
+    [PPC_OP_PS_DIV]  = "ps_div",
+    [PPC_OP_PS_MADD] = "ps_madd",
+    [PPC_OP_PS_MSUB] = "ps_msub",
+    [PPC_OP_PS_NMADD] = "ps_nmadd",
+    [PPC_OP_PS_NMSUB] = "ps_nmsub",
+    [PPC_OP_PS_NEG]  = "ps_neg",
+    [PPC_OP_PS_ABS]  = "ps_abs",
+    [PPC_OP_PS_NABS] = "ps_nabs",
+    [PPC_OP_PS_MR]   = "ps_mr",
+    [PPC_OP_PS_SUM0] = "ps_sum0",
+    [PPC_OP_PS_SUM1] = "ps_sum1",
+    [PPC_OP_PS_MULS0] = "ps_muls0",
+    [PPC_OP_PS_MULS1] = "ps_muls1",
+    [PPC_OP_PS_MADDS0] = "ps_madds0",
+    [PPC_OP_PS_MADDS1] = "ps_madds1",
+    [PPC_OP_PS_MERGE00] = "ps_merge00",
+    [PPC_OP_PS_MERGE01] = "ps_merge01",
+    [PPC_OP_PS_MERGE10] = "ps_merge10",
+    [PPC_OP_PS_MERGE11] = "ps_merge11",
+    [PPC_OP_PS_CMPU0] = "ps_cmpu0",
+    [PPC_OP_PS_CMPO0] = "ps_cmpo0",
+    [PPC_OP_PS_CMPU1] = "ps_cmpu1",
+    [PPC_OP_PS_CMPO1] = "ps_cmpo1",
+    [PPC_OP_PS_SEL]  = "ps_sel",
     [PPC_OP_MULLW]   = "mullw",
     [PPC_OP_MULHW]   = "mulhw",
     [PPC_OP_MULHWU]  = "mulhwu",
@@ -949,6 +1021,11 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
                  ppc_op_name(inst->op), dot(inst), inst->rD, inst->rA, inst->rC);
         break;
 
+    case PPC_OP_FSEL:
+        snprintf(buf, buf_size, "fsel%s   f%u, f%u, f%u, f%u",
+                 dot(inst), inst->rD, inst->rA, inst->rC, inst->rB);
+        break;
+
     case PPC_OP_FMR:
     case PPC_OP_FNEG:
     case PPC_OP_FABS:
@@ -962,6 +1039,12 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
     case PPC_OP_FCMPO:
         snprintf(buf, buf_size, "%s   cr%u, f%u, f%u",
                  ppc_op_name(inst->op), inst->crfD, inst->rA, inst->rB);
+        break;
+
+    case PPC_OP_MTFSB0:
+    case PPC_OP_MTFSB1:
+        snprintf(buf, buf_size, "%s%s  %u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD);
         break;
 
     case PPC_OP_PSQ_L:
@@ -990,6 +1073,58 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
         snprintf(buf, buf_size, "%s   f%u, r%u, r%u, %u, %u",
                  ppc_op_name(inst->op), inst->rS, inst->rA, inst->rB,
                  inst->w, inst->i);
+        break;
+
+    case PPC_OP_PS_ADD:
+    case PPC_OP_PS_SUB:
+    case PPC_OP_PS_DIV:
+        snprintf(buf, buf_size, "%s%s  f%u, f%u, f%u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD, inst->rA, inst->rB);
+        break;
+
+    case PPC_OP_PS_MUL:
+    case PPC_OP_PS_MULS0:
+    case PPC_OP_PS_MULS1:
+        snprintf(buf, buf_size, "%s%s  f%u, f%u, f%u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD, inst->rA, inst->rC);
+        break;
+
+    case PPC_OP_PS_MADD:
+    case PPC_OP_PS_MSUB:
+    case PPC_OP_PS_NMADD:
+    case PPC_OP_PS_NMSUB:
+    case PPC_OP_PS_SUM0:
+    case PPC_OP_PS_SUM1:
+    case PPC_OP_PS_MADDS0:
+    case PPC_OP_PS_MADDS1:
+    case PPC_OP_PS_SEL:
+        snprintf(buf, buf_size, "%s%s  f%u, f%u, f%u, f%u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD, inst->rA,
+                 inst->rC, inst->rB);
+        break;
+
+    case PPC_OP_PS_NEG:
+    case PPC_OP_PS_ABS:
+    case PPC_OP_PS_NABS:
+    case PPC_OP_PS_MR:
+        snprintf(buf, buf_size, "%s%s  f%u, f%u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD, inst->rB);
+        break;
+
+    case PPC_OP_PS_MERGE00:
+    case PPC_OP_PS_MERGE01:
+    case PPC_OP_PS_MERGE10:
+    case PPC_OP_PS_MERGE11:
+        snprintf(buf, buf_size, "%s%s  f%u, f%u, f%u",
+                 ppc_op_name(inst->op), dot(inst), inst->rD, inst->rA, inst->rB);
+        break;
+
+    case PPC_OP_PS_CMPU0:
+    case PPC_OP_PS_CMPO0:
+    case PPC_OP_PS_CMPU1:
+    case PPC_OP_PS_CMPO1:
+        snprintf(buf, buf_size, "%s cr%u, f%u, f%u",
+                 ppc_op_name(inst->op), inst->crfD, inst->rA, inst->rB);
         break;
 
     case PPC_OP_DCBZ:

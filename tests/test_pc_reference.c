@@ -202,6 +202,21 @@ static u32 f32_to_bits(f32 value) {
     return bits;
 }
 
+static void set_ps(CPUState* cpu, u8 reg, u32 ps0, u32 ps1) {
+    cpu->fpr[reg] = (f64)f32_from_bits(ps0);
+    cpu->ps1[reg] = (f64)f32_from_bits(ps1);
+}
+
+static void check_ps(CPUState* cpu, u8 reg, u32 ps0, u32 ps1, const char* name) {
+    char label[96];
+
+    snprintf(label, sizeof(label), "%s ps0", name);
+    check_eq(f32_to_bits((f32)cpu->fpr[reg]), ps0, label);
+
+    snprintf(label, sizeof(label), "%s ps1", name);
+    check_eq(f32_to_bits((f32)cpu->ps1[reg]), ps1, label);
+}
+
 static f64 f64_from_bits(u64 bits) {
     f64 value;
     memcpy(&value, &bits, sizeof(value));
@@ -212,6 +227,33 @@ static u64 f64_to_bits(f64 value) {
     u64 bits;
     memcpy(&bits, &value, sizeof(bits));
     return bits;
+}
+
+static f64 ps_round(f64 value) {
+    return (f64)(f32)value;
+}
+
+static f64 ps_from_bits(u32 bits) {
+    return (f64)f32_from_bits(bits);
+}
+
+static u32 ps_to_bits(f64 value) {
+    return f32_to_bits((f32)value);
+}
+
+static void set_cr1_from_fpscr(CPUState* cpu) {
+    set_cr_field(cpu, 1, (cpu->fpscr >> 28) & 0xFu);
+}
+
+static void compare_f32_values(CPUState* cpu, u8 crf, f32 a, f32 b) {
+    u32 bits;
+
+    if (a < b) bits = 0x8u;
+    else if (a > b) bits = 0x4u;
+    else if (a == b) bits = 0x2u;
+    else bits = 0x1u;
+
+    set_cr_field(cpu, crf, bits);
 }
 
 static u32 arith_shift_right(u32 value, u32 sh) {
@@ -584,6 +626,177 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
 
     case PPC_OP_FRSP:
         cpu->fpr[inst->rD] = (f64)(f32)cpu->fpr[inst->rB];
+        break;
+
+    case PPC_OP_FSEL:
+        cpu->fpr[inst->rD] = (cpu->fpr[inst->rA] >= 0.0) ?
+            cpu->fpr[inst->rC] : cpu->fpr[inst->rB];
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_MTFSB0:
+    case PPC_OP_MTFSB1: {
+        u32 mask = 0x80000000u >> inst->rD;
+        if (inst->op == PPC_OP_MTFSB0) {
+            if (inst->rD != 1 && inst->rD != 2)
+                cpu->fpscr &= ~mask;
+        } else {
+            if (inst->rD != 1 && inst->rD != 2)
+                cpu->fpscr |= mask;
+        }
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
+    case PPC_OP_PS_ADD:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] + (f32)cpu->fpr[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] + (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_SUB:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] - (f32)cpu->fpr[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] - (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MUL:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] * (f32)cpu->fpr[inst->rC]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] * (f32)cpu->ps1[inst->rC]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_DIV:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] / (f32)cpu->fpr[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] / (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MADD:
+    case PPC_OP_PS_MSUB:
+    case PPC_OP_PS_NMADD:
+    case PPC_OP_PS_NMSUB: {
+        f32 ps0 = (f32)cpu->fpr[inst->rA] * (f32)cpu->fpr[inst->rC];
+        f32 ps1 = (f32)cpu->ps1[inst->rA] * (f32)cpu->ps1[inst->rC];
+
+        if (inst->op == PPC_OP_PS_MADD || inst->op == PPC_OP_PS_NMADD) {
+            ps0 += (f32)cpu->fpr[inst->rB];
+            ps1 += (f32)cpu->ps1[inst->rB];
+        } else {
+            ps0 -= (f32)cpu->fpr[inst->rB];
+            ps1 -= (f32)cpu->ps1[inst->rB];
+        }
+        if (inst->op == PPC_OP_PS_NMADD || inst->op == PPC_OP_PS_NMSUB) {
+            ps0 = -ps0;
+            ps1 = -ps1;
+        }
+
+        cpu->fpr[inst->rD] = ps_round(ps0);
+        cpu->ps1[inst->rD] = ps_round(ps1);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
+    case PPC_OP_PS_NEG:
+        cpu->fpr[inst->rD] = ps_from_bits(ps_to_bits(cpu->fpr[inst->rB]) ^ 0x80000000u);
+        cpu->ps1[inst->rD] = ps_from_bits(ps_to_bits(cpu->ps1[inst->rB]) ^ 0x80000000u);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_ABS:
+        cpu->fpr[inst->rD] = ps_from_bits(ps_to_bits(cpu->fpr[inst->rB]) & 0x7FFFFFFFu);
+        cpu->ps1[inst->rD] = ps_from_bits(ps_to_bits(cpu->ps1[inst->rB]) & 0x7FFFFFFFu);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_NABS:
+        cpu->fpr[inst->rD] = ps_from_bits(ps_to_bits(cpu->fpr[inst->rB]) | 0x80000000u);
+        cpu->ps1[inst->rD] = ps_from_bits(ps_to_bits(cpu->ps1[inst->rB]) | 0x80000000u);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MR:
+        cpu->fpr[inst->rD] = cpu->fpr[inst->rB];
+        cpu->ps1[inst->rD] = cpu->ps1[inst->rB];
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_SUM0:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] + (f32)cpu->ps1[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round(cpu->ps1[inst->rC]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_SUM1:
+        cpu->fpr[inst->rD] = ps_round(cpu->fpr[inst->rC]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] + (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MULS0:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] * (f32)cpu->fpr[inst->rC]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] * (f32)cpu->fpr[inst->rC]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MULS1:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] * (f32)cpu->ps1[inst->rC]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] * (f32)cpu->ps1[inst->rC]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MADDS0:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] * (f32)cpu->fpr[inst->rC] + (f32)cpu->fpr[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] * (f32)cpu->fpr[inst->rC] + (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MADDS1:
+        cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] * (f32)cpu->ps1[inst->rC] + (f32)cpu->fpr[inst->rB]);
+        cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] * (f32)cpu->ps1[inst->rC] + (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MERGE00:
+        cpu->fpr[inst->rD] = ps_round(cpu->fpr[inst->rA]);
+        cpu->ps1[inst->rD] = ps_round(cpu->fpr[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MERGE01:
+        cpu->fpr[inst->rD] = ps_round(cpu->fpr[inst->rA]);
+        cpu->ps1[inst->rD] = ps_round(cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MERGE10:
+        cpu->fpr[inst->rD] = ps_round(cpu->ps1[inst->rA]);
+        cpu->ps1[inst->rD] = ps_round(cpu->fpr[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_MERGE11:
+        cpu->fpr[inst->rD] = ps_round(cpu->ps1[inst->rA]);
+        cpu->ps1[inst->rD] = ps_round(cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_CMPU0:
+    case PPC_OP_PS_CMPO0:
+        compare_f32_values(cpu, inst->crfD, (f32)cpu->fpr[inst->rA], (f32)cpu->fpr[inst->rB]);
+        break;
+
+    case PPC_OP_PS_CMPU1:
+    case PPC_OP_PS_CMPO1:
+        compare_f32_values(cpu, inst->crfD, (f32)cpu->ps1[inst->rA], (f32)cpu->ps1[inst->rB]);
+        break;
+
+    case PPC_OP_PS_SEL:
+        cpu->fpr[inst->rD] = ((f32)cpu->fpr[inst->rA] >= 0.0f) ?
+            cpu->fpr[inst->rC] : cpu->fpr[inst->rB];
+        cpu->ps1[inst->rD] = ((f32)cpu->ps1[inst->rA] >= 0.0f) ?
+            cpu->ps1[inst->rC] : cpu->ps1[inst->rB];
+        if (inst->rc) set_cr1_from_fpscr(cpu);
         break;
 
     case PPC_OP_FCMPU:
@@ -1696,6 +1909,152 @@ static void test_psq_memory(CPUState* cpu) {
     check_eq(cpu->gpr[4], base + 0xA0, "psq_stux updates rA");
 }
 
+static void test_paired_single_arithmetic(CPUState* cpu) {
+    printf("--- paired-single arithmetic ---\n");
+
+    cpu_reset(cpu);
+
+    set_ps(cpu, 2, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 3, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x1022182A, BASE);
+    check_ps(cpu, 1, 0x40800000u, 0x40C00000u, "ps_add");
+
+    set_ps(cpu, 5, 0x40E00000u, 0x41200000u);
+    set_ps(cpu, 6, 0x3FC00000u, 0x40200000u);
+    exec_raw(cpu, 0x10853028, BASE);
+    check_ps(cpu, 4, 0x40B00000u, 0x40F00000u, "ps_sub");
+
+    set_ps(cpu, 8, 0x40400000u, 0x40800000u);
+    set_ps(cpu, 9, 0x40000000u, 0x40A00000u);
+    exec_raw(cpu, 0x10E80272, BASE);
+    check_ps(cpu, 7, 0x40C00000u, 0x41A00000u, "ps_mul");
+
+    set_ps(cpu, 11, 0x40E00000u, 0x41100000u);
+    set_ps(cpu, 12, 0x40000000u, 0x40400000u);
+    exec_raw(cpu, 0x114B6024, BASE);
+    check_ps(cpu, 10, 0x40600000u, 0x40400000u, "ps_div");
+
+    set_ps(cpu, 14, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 15, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 16, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x11AE83FA, BASE);
+    check_ps(cpu, 13, 0x41100000u, 0x41880000u, "ps_madd");
+
+    set_ps(cpu, 18, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 19, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 20, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x1232A4F8, BASE);
+    check_ps(cpu, 17, 0x40E00000u, 0x41500000u, "ps_msub");
+
+    set_ps(cpu, 22, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 23, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 24, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x12B6C5FE, BASE);
+    check_ps(cpu, 21, 0xC1100000u, 0xC1880000u, "ps_nmadd");
+
+    set_ps(cpu, 26, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 27, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 28, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x133AE6FC, BASE);
+    check_ps(cpu, 25, 0xC0E00000u, 0xC1500000u, "ps_nmsub");
+
+    set_ps(cpu, 2, 0x00000000u, 0xC0200000u);
+    exec_raw(cpu, 0x10201050, BASE);
+    check_ps(cpu, 1, 0x80000000u, 0x40200000u, "ps_neg");
+
+    set_ps(cpu, 4, 0x80000000u, 0xC0200000u);
+    exec_raw(cpu, 0x10602210, BASE);
+    check_ps(cpu, 3, 0x00000000u, 0x40200000u, "ps_abs");
+
+    set_ps(cpu, 6, 0x00000000u, 0x40200000u);
+    exec_raw(cpu, 0x10A03110, BASE);
+    check_ps(cpu, 5, 0x80000000u, 0xC0200000u, "ps_nabs");
+
+    set_ps(cpu, 8, 0x80000000u, 0x40800000u);
+    exec_raw(cpu, 0x10E04090, BASE);
+    check_ps(cpu, 7, 0x80000000u, 0x40800000u, "ps_mr");
+
+    set_ps(cpu, 10, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 11, 0x40400000u, 0x40800000u);
+    set_ps(cpu, 12, 0x40A00000u, 0x40C00000u);
+    exec_raw(cpu, 0x112A62D4, BASE);
+    check_ps(cpu, 9, 0x40E00000u, 0x40800000u, "ps_sum0");
+
+    set_ps(cpu, 14, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 15, 0x40400000u, 0x40800000u);
+    set_ps(cpu, 16, 0x40A00000u, 0x40C00000u);
+    exec_raw(cpu, 0x11AE83D6, BASE);
+    check_ps(cpu, 13, 0x40400000u, 0x40E00000u, "ps_sum1");
+
+    set_ps(cpu, 18, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 19, 0x40800000u, 0x40A00000u);
+    exec_raw(cpu, 0x123204D8, BASE);
+    check_ps(cpu, 17, 0x41000000u, 0x41400000u, "ps_muls0");
+
+    set_ps(cpu, 21, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 22, 0x40800000u, 0x40A00000u);
+    exec_raw(cpu, 0x1295059A, BASE);
+    check_ps(cpu, 20, 0x41200000u, 0x41700000u, "ps_muls1");
+
+    set_ps(cpu, 24, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 25, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 26, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x12F8D65C, BASE);
+    check_ps(cpu, 23, 0x41100000u, 0x41600000u, "ps_madds0");
+
+    set_ps(cpu, 28, 0x40000000u, 0x40400000u);
+    set_ps(cpu, 29, 0x40800000u, 0x40A00000u);
+    set_ps(cpu, 30, 0x3F800000u, 0x40000000u);
+    exec_raw(cpu, 0x137CF75E, BASE);
+    check_ps(cpu, 27, 0x41300000u, 0x41880000u, "ps_madds1");
+
+    set_ps(cpu, 2, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 3, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x10221C20, BASE);
+    check_ps(cpu, 1, 0x3F800000u, 0x40400000u, "ps_merge00");
+
+    set_ps(cpu, 5, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 6, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x10853460, BASE);
+    check_ps(cpu, 4, 0x3F800000u, 0x40800000u, "ps_merge01");
+
+    set_ps(cpu, 8, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 9, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x10E84CA0, BASE);
+    check_ps(cpu, 7, 0x40000000u, 0x40400000u, "ps_merge10");
+
+    set_ps(cpu, 11, 0x3F800000u, 0x40000000u);
+    set_ps(cpu, 12, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x114B64E0, BASE);
+    check_ps(cpu, 10, 0x40000000u, 0x40800000u, "ps_merge11");
+
+    set_ps(cpu, 13, 0x3F800000u, 0x00000000u);
+    set_ps(cpu, 14, 0x40000000u, 0x00000000u);
+    exec_raw(cpu, 0x110D7000, BASE);
+    check_eq(get_cr_field(cpu, 2), 0x8, "ps_cmpu0 less");
+
+    set_ps(cpu, 15, 0x40800000u, 0x00000000u);
+    set_ps(cpu, 16, 0x40400000u, 0x00000000u);
+    exec_raw(cpu, 0x118F8040, BASE);
+    check_eq(get_cr_field(cpu, 3), 0x4, "ps_cmpo0 greater");
+
+    set_ps(cpu, 17, 0x00000000u, 0x7FC00000u);
+    set_ps(cpu, 18, 0x00000000u, 0x40000000u);
+    exec_raw(cpu, 0x12119080, BASE);
+    check_eq(get_cr_field(cpu, 4), 0x1, "ps_cmpu1 unordered");
+
+    set_ps(cpu, 19, 0x00000000u, 0x40000000u);
+    set_ps(cpu, 20, 0x00000000u, 0x40000000u);
+    exec_raw(cpu, 0x1293A0C0, BASE);
+    check_eq(get_cr_field(cpu, 5), 0x2, "ps_cmpo1 equal");
+
+    set_ps(cpu, 22, 0x3F800000u, 0xBF800000u);
+    set_ps(cpu, 23, 0x41F00000u, 0x42200000u);
+    set_ps(cpu, 24, 0x41200000u, 0x41A00000u);
+    exec_raw(cpu, 0x12B6C5EE, BASE);
+    check_ps(cpu, 21, 0x41F00000u, 0x41A00000u, "ps_sel");
+}
+
 static void test_fpu_arithmetic(CPUState* cpu) {
     printf("--- FPU arithmetic ---\n");
 
@@ -1759,6 +2118,34 @@ static void test_fpu_arithmetic(CPUState* cpu) {
     cpu->fpr[2] = 1.1;
     exec_raw(cpu, 0xFC201018, BASE);
     check_eq(f32_to_bits((f32)cpu->fpr[1]), 0x3F8CCCCDu, "frsp rounds to single");
+
+    cpu->fpr[2] = -1.0;
+    cpu->fpr[3] = 3.0;
+    cpu->fpr[4] = 4.0;
+    exec_raw(cpu, 0xFC2220EE, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), 0x4010000000000000ull, "fsel negative selects fB");
+
+    cpu->fpr[2] = f64_from_bits(0x8000000000000000ull);
+    exec_raw(cpu, 0xFC2220EE, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), 0x4008000000000000ull, "fsel negative zero selects fC");
+
+    cpu->fpr[2] = f64_from_bits(0x7FF8000000000000ull);
+    exec_raw(cpu, 0xFC2220EE, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), 0x4010000000000000ull, "fsel NaN selects fB");
+
+    cpu->fpscr = 0;
+    exec_raw(cpu, 0xFFE0004C, BASE);
+    check_eq(cpu->fpscr, 0x00000001u, "mtfsb1 sets selected bit");
+    exec_raw(cpu, 0xFFE0008C, BASE);
+    check_eq(cpu->fpscr, 0x00000000u, "mtfsb0 clears selected bit");
+    exec_raw(cpu, 0xFC00004C, BASE);
+    check_eq(cpu->fpscr, 0x80000000u, "mtfsb1 sets FX bit");
+    exec_raw(cpu, 0xFC00008C, BASE);
+    check_eq(cpu->fpscr, 0, "mtfsb0 clears FX");
+    exec_raw(cpu, 0xFC20004C, BASE);
+    check_eq(cpu->fpscr, 0, "mtfsb1 leaves FEX unchanged");
+    exec_raw(cpu, 0xFC40004C, BASE);
+    check_eq(cpu->fpscr, 0, "mtfsb1 leaves VX unchanged");
 
     cpu->fpr[3] = 1.0;
     cpu->fpr[4] = 2.0;
@@ -1910,6 +2297,7 @@ int main(void) {
     test_indexed_memory(&cpu);
     test_fpu_memory(&cpu);
     test_psq_memory(&cpu);
+    test_paired_single_arithmetic(&cpu);
     test_fpu_arithmetic(&cpu);
     test_branches_cr_spr(&cpu);
 

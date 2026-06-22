@@ -149,8 +149,11 @@ static const OpcodeDecode opcode_cases[] = {
     { 0xFFA0F210, PPC_OP_FABS, "fabs" },
     { 0xFFE00110, PPC_OP_FNABS, "fnabs" },
     { 0xFC201018, PPC_OP_FRSP, "frsp" },
+    { 0xFC2220EE, PPC_OP_FSEL, "fsel" },
     { 0xFD032000, PPC_OP_FCMPU, "fcmpu" },
     { 0xFD853040, PPC_OP_FCMPO, "fcmpo" },
+    { 0xFFE0008C, PPC_OP_MTFSB0, "mtfsb0" },
+    { 0xFFE0004C, PPC_OP_MTFSB1, "mtfsb1" },
     { 0xE0240000, PPC_OP_PSQ_L, "psq_l" },
     { 0xE4640008, PPC_OP_PSQ_LU, "psq_lu" },
     { 0xF0A40010, PPC_OP_PSQ_ST, "psq_st" },
@@ -159,6 +162,33 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x1164284C, PPC_OP_PSQ_LUX, "psq_lux" },
     { 0x11A4280E, PPC_OP_PSQ_STX, "psq_stx" },
     { 0x11E4284E, PPC_OP_PSQ_STUX, "psq_stux" },
+    { 0x1022182A, PPC_OP_PS_ADD, "ps_add" },
+    { 0x10853028, PPC_OP_PS_SUB, "ps_sub" },
+    { 0x10E80272, PPC_OP_PS_MUL, "ps_mul" },
+    { 0x114B6024, PPC_OP_PS_DIV, "ps_div" },
+    { 0x11AE83FA, PPC_OP_PS_MADD, "ps_madd" },
+    { 0x1232A4F8, PPC_OP_PS_MSUB, "ps_msub" },
+    { 0x12B6C5FE, PPC_OP_PS_NMADD, "ps_nmadd" },
+    { 0x133AE6FC, PPC_OP_PS_NMSUB, "ps_nmsub" },
+    { 0x10201050, PPC_OP_PS_NEG, "ps_neg" },
+    { 0x10602210, PPC_OP_PS_ABS, "ps_abs" },
+    { 0x10A03110, PPC_OP_PS_NABS, "ps_nabs" },
+    { 0x10E04090, PPC_OP_PS_MR, "ps_mr" },
+    { 0x112A62D4, PPC_OP_PS_SUM0, "ps_sum0" },
+    { 0x11AE83D6, PPC_OP_PS_SUM1, "ps_sum1" },
+    { 0x123204D8, PPC_OP_PS_MULS0, "ps_muls0" },
+    { 0x1295059A, PPC_OP_PS_MULS1, "ps_muls1" },
+    { 0x12F8D65C, PPC_OP_PS_MADDS0, "ps_madds0" },
+    { 0x137CF75E, PPC_OP_PS_MADDS1, "ps_madds1" },
+    { 0x10221C20, PPC_OP_PS_MERGE00, "ps_merge00" },
+    { 0x10853460, PPC_OP_PS_MERGE01, "ps_merge01" },
+    { 0x10E84CA0, PPC_OP_PS_MERGE10, "ps_merge10" },
+    { 0x114B64E0, PPC_OP_PS_MERGE11, "ps_merge11" },
+    { 0x110D7000, PPC_OP_PS_CMPU0, "ps_cmpu0" },
+    { 0x118F8040, PPC_OP_PS_CMPO0, "ps_cmpo0" },
+    { 0x12119080, PPC_OP_PS_CMPU1, "ps_cmpu1" },
+    { 0x1293A0C0, PPC_OP_PS_CMPO1, "ps_cmpo1" },
+    { 0x12B6C5EE, PPC_OP_PS_SEL, "ps_sel" },
     { 0x7C6429D6, PPC_OP_MULLW, "mullw" },
     { 0x7CC74096, PPC_OP_MULHW, "mulhw" },
     { 0x7D2A5816, PPC_OP_MULHWU, "mulhwu" },
@@ -188,16 +218,16 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 139\n");
-    CHECK(PPC_OP_COUNT - 1 == 139, "should expose 139 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 169\n");
+    CHECK(PPC_OP_COUNT - 1 == 169, "should expose 169 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 139-opcode set\n");
+    printf("  decode every opcode in the current 169-opcode set\n");
 
-    CHECK(count == 139, "opcode table should have 139 entries, got %d", count);
+    CHECK(count == 169, "opcode table should have 169 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
         PPCInst inst = ppc_decode(opcode_cases[i].raw, BASE + (u32)(i * 4));
@@ -261,9 +291,21 @@ static int test_pseudoops_and_display(void) {
     ppc_disasm(buf, sizeof(buf), &inst);
     CHECK(strcmp(buf, "fcmpu   cr2, f3, f4") == 0, "fcmpu disasm, got '%s'", buf);
 
+    inst = ppc_decode(0xFC2220EE, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "fsel   f1, f2, f3, f4") == 0, "fsel disasm, got '%s'", buf);
+
+    inst = ppc_decode(0xFFE0004C, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "mtfsb1  31") == 0, "mtfsb1 disasm, got '%s'", buf);
+
     inst = ppc_decode(0xE0448004, BASE);
     ppc_disasm(buf, sizeof(buf), &inst);
     CHECK(strcmp(buf, "psq_l   f2, 4(r4), 1, 0") == 0, "psq_l disasm, got '%s'", buf);
+
+    inst = ppc_decode(0x12B6C5EE, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "ps_sel  f21, f22, f23, f24") == 0, "ps_sel disasm, got '%s'", buf);
 
     return 1;
 }
@@ -320,6 +362,24 @@ static int test_field_edges(void) {
     CHECK(inst.rD == 10, "psq_lx fD should be 10");
     CHECK(inst.w == 1, "psq_lx W should be 1");
     CHECK(inst.i == 0, "psq_lx I should be 0");
+
+    inst = ppc_decode(0x12B6C5EE, BASE);
+    CHECK(inst.op == PPC_OP_PS_SEL, "ps_sel should decode");
+    CHECK(inst.rD == 21, "ps_sel fD should be 21");
+    CHECK(inst.rA == 22, "ps_sel fA should be 22");
+    CHECK(inst.rB == 24, "ps_sel fB should be 24");
+    CHECK(inst.rC == 23, "ps_sel fC should be 23");
+
+    inst = ppc_decode(0x110D7000, BASE);
+    CHECK(inst.op == PPC_OP_PS_CMPU0, "ps_cmpu0 should decode");
+    CHECK(inst.crfD == 2, "ps_cmpu0 crfD should be 2");
+    CHECK(inst.rA == 13, "ps_cmpu0 fA should be 13");
+    CHECK(inst.rB == 14, "ps_cmpu0 fB should be 14");
+
+    inst = ppc_decode(0xFC60004D, BASE);
+    CHECK(inst.op == PPC_OP_MTFSB1, "mtfsb1. should decode");
+    CHECK(inst.rD == 3, "mtfsb1 bit should be 3");
+    CHECK(inst.rc == true, "mtfsb1. should set Rc");
 
     return 1;
 }

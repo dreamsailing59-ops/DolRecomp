@@ -196,8 +196,11 @@ static const DecodeCase cases[] = {
     { "fabs",   0xFFA0F210, PPC_OP_FABS,  F_RD|F_RB, .rD=29, .rB=30 },
     { "fnabs",  0xFFE00110, PPC_OP_FNABS, F_RD|F_RB, .rD=31, .rB=0 },
     { "frsp",   0xFC201018, PPC_OP_FRSP,  F_RD|F_RB, .rD=1,  .rB=2 },
+    { "fsel",   0xFC2220EE, PPC_OP_FSEL,  F_RD|F_RA|F_RB|F_RC_REG, .rD=1, .rA=2, .rB=4, .rC=3 },
     { "fcmpu",  0xFD032000, PPC_OP_FCMPU, F_CRF|F_RA|F_RB, .crfD=2, .rA=3, .rB=4 },
     { "fcmpo",  0xFD853040, PPC_OP_FCMPO, F_CRF|F_RA|F_RB, .crfD=3, .rA=5, .rB=6 },
+    { "mtfsb0", 0xFFE0008C, PPC_OP_MTFSB0, F_RD, .rD=31 },
+    { "mtfsb1", 0xFFE0004C, PPC_OP_MTFSB1, F_RD, .rD=31 },
 
     { "psq_l",   0xE0240000, PPC_OP_PSQ_L,   F_RD|F_RA|F_SIMM|F_W|F_I, .rD=1,  .rA=4, .simm=0,  .w=0, .i=0 },
     { "psq_lu",  0xE4640008, PPC_OP_PSQ_LU,  F_RD|F_RA|F_SIMM|F_W|F_I, .rD=3,  .rA=4, .simm=8,  .w=0, .i=0 },
@@ -207,6 +210,34 @@ static const DecodeCase cases[] = {
     { "psq_lux", 0x1164284C, PPC_OP_PSQ_LUX, F_RD|F_RA|F_RB|F_W|F_I, .rD=11, .rA=4, .rB=5, .w=0, .i=0 },
     { "psq_stx", 0x11A4280E, PPC_OP_PSQ_STX, F_RS|F_RA|F_RB|F_W|F_I, .rS=13, .rA=4, .rB=5, .w=0, .i=0 },
     { "psq_stux",0x11E4284E, PPC_OP_PSQ_STUX,F_RS|F_RA|F_RB|F_W|F_I, .rS=15, .rA=4, .rB=5, .w=0, .i=0 },
+
+    { "ps_add",  0x1022182A, PPC_OP_PS_ADD,  F_RD|F_RA|F_RB, .rD=1,  .rA=2,  .rB=3 },
+    { "ps_sub",  0x10853028, PPC_OP_PS_SUB,  F_RD|F_RA|F_RB, .rD=4,  .rA=5,  .rB=6 },
+    { "ps_mul",  0x10E80272, PPC_OP_PS_MUL,  F_RD|F_RA|F_RC_REG, .rD=7,  .rA=8,  .rC=9 },
+    { "ps_div",  0x114B6024, PPC_OP_PS_DIV,  F_RD|F_RA|F_RB, .rD=10, .rA=11, .rB=12 },
+    { "ps_madd", 0x11AE83FA, PPC_OP_PS_MADD, F_RD|F_RA|F_RB|F_RC_REG, .rD=13, .rA=14, .rB=16, .rC=15 },
+    { "ps_msub", 0x1232A4F8, PPC_OP_PS_MSUB, F_RD|F_RA|F_RB|F_RC_REG, .rD=17, .rA=18, .rB=20, .rC=19 },
+    { "ps_nmadd",0x12B6C5FE, PPC_OP_PS_NMADD,F_RD|F_RA|F_RB|F_RC_REG, .rD=21, .rA=22, .rB=24, .rC=23 },
+    { "ps_nmsub",0x133AE6FC, PPC_OP_PS_NMSUB,F_RD|F_RA|F_RB|F_RC_REG, .rD=25, .rA=26, .rB=28, .rC=27 },
+    { "ps_neg",  0x10201050, PPC_OP_PS_NEG,  F_RD|F_RB, .rD=1,  .rB=2 },
+    { "ps_abs",  0x10602210, PPC_OP_PS_ABS,  F_RD|F_RB, .rD=3,  .rB=4 },
+    { "ps_nabs", 0x10A03110, PPC_OP_PS_NABS, F_RD|F_RB, .rD=5,  .rB=6 },
+    { "ps_mr",   0x10E04090, PPC_OP_PS_MR,   F_RD|F_RB, .rD=7,  .rB=8 },
+    { "ps_sum0", 0x112A62D4, PPC_OP_PS_SUM0, F_RD|F_RA|F_RB|F_RC_REG, .rD=9,  .rA=10, .rB=12, .rC=11 },
+    { "ps_sum1", 0x11AE83D6, PPC_OP_PS_SUM1, F_RD|F_RA|F_RB|F_RC_REG, .rD=13, .rA=14, .rB=16, .rC=15 },
+    { "ps_muls0",0x123204D8, PPC_OP_PS_MULS0,F_RD|F_RA|F_RC_REG, .rD=17, .rA=18, .rC=19 },
+    { "ps_muls1",0x1295059A, PPC_OP_PS_MULS1,F_RD|F_RA|F_RC_REG, .rD=20, .rA=21, .rC=22 },
+    { "ps_madds0",0x12F8D65C,PPC_OP_PS_MADDS0,F_RD|F_RA|F_RB|F_RC_REG, .rD=23, .rA=24, .rB=26, .rC=25 },
+    { "ps_madds1",0x137CF75E,PPC_OP_PS_MADDS1,F_RD|F_RA|F_RB|F_RC_REG, .rD=27, .rA=28, .rB=30, .rC=29 },
+    { "ps_merge00",0x10221C20,PPC_OP_PS_MERGE00,F_RD|F_RA|F_RB, .rD=1,  .rA=2,  .rB=3 },
+    { "ps_merge01",0x10853460,PPC_OP_PS_MERGE01,F_RD|F_RA|F_RB, .rD=4,  .rA=5,  .rB=6 },
+    { "ps_merge10",0x10E84CA0,PPC_OP_PS_MERGE10,F_RD|F_RA|F_RB, .rD=7,  .rA=8,  .rB=9 },
+    { "ps_merge11",0x114B64E0,PPC_OP_PS_MERGE11,F_RD|F_RA|F_RB, .rD=10, .rA=11, .rB=12 },
+    { "ps_cmpu0",0x110D7000, PPC_OP_PS_CMPU0,F_CRF|F_RA|F_RB, .crfD=2, .rA=13, .rB=14 },
+    { "ps_cmpo0",0x118F8040, PPC_OP_PS_CMPO0,F_CRF|F_RA|F_RB, .crfD=3, .rA=15, .rB=16 },
+    { "ps_cmpu1",0x12119080, PPC_OP_PS_CMPU1,F_CRF|F_RA|F_RB, .crfD=4, .rA=17, .rB=18 },
+    { "ps_cmpo1",0x1293A0C0, PPC_OP_PS_CMPO1,F_CRF|F_RA|F_RB, .crfD=5, .rA=19, .rB=20 },
+    { "ps_sel", 0x12B6C5EE, PPC_OP_PS_SEL, F_RD|F_RA|F_RB|F_RC_REG, .rD=21, .rA=22, .rB=24, .rC=23 },
 
     { "mullw",  0x7C6429D6, PPC_OP_MULLW,  F_RD|F_RA|F_RB, .rD=3,  .rA=4,  .rB=5 },
     { "mulhw",  0x7CC74096, PPC_OP_MULHW,  F_RD|F_RA|F_RB, .rD=6,  .rA=7,  .rB=8 },
@@ -242,7 +273,7 @@ int main(void) {
     int num_cases = (int)(sizeof(cases) / sizeof(cases[0]));
     printf("cross-check: %d opcodes against devkitPPC ground truth\n\n", num_cases);
 
-    check((PPC_OP_COUNT - 1) == 139, -1, "opcode count", PPC_OP_COUNT - 1, 139);
+    check((PPC_OP_COUNT - 1) == 169, -1, "opcode count", PPC_OP_COUNT - 1, 169);
 
     for (int n = 0; n < num_cases; n++) {
         const DecodeCase* c = &cases[n];

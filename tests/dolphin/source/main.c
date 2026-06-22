@@ -164,6 +164,121 @@ static u64 be_load64(const volatile u8* p) {
     return ((u64)be_load32(p) << 32) | be_load32(p + 4);
 }
 
+static void ps_store_bits(volatile u8* p, u32 ps0, u32 ps1) {
+    be_store32(p, ps0);
+    be_store32(p + 4, ps1);
+}
+
+static void check_ps_bits(const volatile u8* p, u32 ps0, u32 ps1, const char* name) {
+    char label[96];
+
+    snprintf(label, sizeof(label), "%s ps0", name);
+    check_eq(be_load32(p), ps0, label);
+
+    snprintf(label, sizeof(label), "%s ps1", name);
+    check_eq(be_load32(p + 4), ps1, label);
+}
+
+static u32 cr_field(u32 cr, u32 crf) {
+    return (cr >> (28u - crf * 4u)) & 0xFu;
+}
+
+static void write_fpscr(u32 bits) {
+    double fpscr = f64_from_bits((u64)bits);
+    asm volatile("mtfsf 0xff,%0" : : "f"(fpscr));
+}
+
+static u32 read_fpscr(void) {
+    double fpscr;
+    asm volatile("mffs %0" : "=f"(fpscr));
+    return (u32)f64_bits(fpscr);
+}
+
+#define RUN_PS_AB(label, mnemonic, want0, want1, a0, a1, b0, b1) do { \
+    double fd, fa, fb; \
+    ps_store_bits(&ps_a[0], (a0), (a1)); \
+    ps_store_bits(&ps_b[0], (b0), (b1)); \
+    memset((void*)ps_out, 0, sizeof(ps_out)); \
+    asm volatile( \
+        "psq_l %1,0(%3),0,0\n\t" \
+        "psq_l %2,0(%4),0,0\n\t" \
+        #mnemonic " %0,%1,%2\n\t" \
+        "psq_st %0,0(%5),0,0" \
+        : "=&f"(fd), "=&f"(fa), "=&f"(fb) \
+        : "r"(&ps_a[0]), "r"(&ps_b[0]), "r"(&ps_out[0]) \
+        : "memory" \
+    ); \
+    check_ps_bits(&ps_out[0], (want0), (want1), (label)); \
+} while (0)
+
+#define RUN_PS_AC(label, mnemonic, want0, want1, a0, a1, c0, c1) do { \
+    double fd, fa, fc; \
+    ps_store_bits(&ps_a[0], (a0), (a1)); \
+    ps_store_bits(&ps_c[0], (c0), (c1)); \
+    memset((void*)ps_out, 0, sizeof(ps_out)); \
+    asm volatile( \
+        "psq_l %1,0(%3),0,0\n\t" \
+        "psq_l %2,0(%4),0,0\n\t" \
+        #mnemonic " %0,%1,%2\n\t" \
+        "psq_st %0,0(%5),0,0" \
+        : "=&f"(fd), "=&f"(fa), "=&f"(fc) \
+        : "r"(&ps_a[0]), "r"(&ps_c[0]), "r"(&ps_out[0]) \
+        : "memory" \
+    ); \
+    check_ps_bits(&ps_out[0], (want0), (want1), (label)); \
+} while (0)
+
+#define RUN_PS_ACB(label, mnemonic, want0, want1, a0, a1, c0, c1, b0, b1) do { \
+    double fd, fa, fb, fc; \
+    ps_store_bits(&ps_a[0], (a0), (a1)); \
+    ps_store_bits(&ps_b[0], (b0), (b1)); \
+    ps_store_bits(&ps_c[0], (c0), (c1)); \
+    memset((void*)ps_out, 0, sizeof(ps_out)); \
+    asm volatile( \
+        "psq_l %1,0(%4),0,0\n\t" \
+        "psq_l %2,0(%5),0,0\n\t" \
+        "psq_l %3,0(%6),0,0\n\t" \
+        #mnemonic " %0,%1,%3,%2\n\t" \
+        "psq_st %0,0(%7),0,0" \
+        : "=&f"(fd), "=&f"(fa), "=&f"(fb), "=&f"(fc) \
+        : "r"(&ps_a[0]), "r"(&ps_b[0]), "r"(&ps_c[0]), "r"(&ps_out[0]) \
+        : "memory" \
+    ); \
+    check_ps_bits(&ps_out[0], (want0), (want1), (label)); \
+} while (0)
+
+#define RUN_PS_B(label, mnemonic, want0, want1, b0, b1) do { \
+    double fd, fb; \
+    ps_store_bits(&ps_b[0], (b0), (b1)); \
+    memset((void*)ps_out, 0, sizeof(ps_out)); \
+    asm volatile( \
+        "psq_l %1,0(%2),0,0\n\t" \
+        #mnemonic " %0,%1\n\t" \
+        "psq_st %0,0(%3),0,0" \
+        : "=&f"(fd), "=&f"(fb) \
+        : "r"(&ps_b[0]), "r"(&ps_out[0]) \
+        : "memory" \
+    ); \
+    check_ps_bits(&ps_out[0], (want0), (want1), (label)); \
+} while (0)
+
+#define RUN_PS_CMP(label, mnemonic, crf, want, a0, a1, b0, b1) do { \
+    double fa, fb; \
+    u32 cr; \
+    ps_store_bits(&ps_a[0], (a0), (a1)); \
+    ps_store_bits(&ps_b[0], (b0), (b1)); \
+    asm volatile( \
+        "psq_l %1,0(%3),0,0\n\t" \
+        "psq_l %2,0(%4),0,0\n\t" \
+        #mnemonic " cr" #crf ",%1,%2\n\t" \
+        "mfcr %0" \
+        : "=&r"(cr), "=&f"(fa), "=&f"(fb) \
+        : "r"(&ps_a[0]), "r"(&ps_b[0]) \
+        : "memory", "cr" #crf \
+    ); \
+    check_eq(cr_field(cr, (crf)), (want), (label)); \
+} while (0)
+
 #define DEFINE_CR_LOGIC_TEST(fn_name, mnemonic) \
 static u32 fn_name(u32 seed) { \
     u32 cr; \
@@ -1285,6 +1400,86 @@ static void test_psq_memory(void) {
     check((u32)ptr == (u32)&out[0xA0], "psq_stux updates rA");
 }
 
+static void test_paired_single_arithmetic(void) {
+    kprintf("--- paired-single arithmetic ---\n");
+    printf("--- paired-single arithmetic ---\n");
+
+    static volatile u8 ps_a[8] __attribute__((aligned(32)));
+    static volatile u8 ps_b[8] __attribute__((aligned(32)));
+    static volatile u8 ps_c[8] __attribute__((aligned(32)));
+    static volatile u8 ps_out[8] __attribute__((aligned(32)));
+
+    RUN_PS_AB("ps_add", ps_add, 0x40800000u, 0x40C00000u,
+              0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u);
+    RUN_PS_AB("ps_sub", ps_sub, 0x40B00000u, 0x40F00000u,
+              0x40E00000u, 0x41200000u, 0x3FC00000u, 0x40200000u);
+    RUN_PS_AC("ps_mul", ps_mul, 0x40C00000u, 0x41A00000u,
+              0x40400000u, 0x40800000u, 0x40000000u, 0x40A00000u);
+    RUN_PS_AB("ps_div", ps_div, 0x40600000u, 0x40400000u,
+              0x40E00000u, 0x41100000u, 0x40000000u, 0x40400000u);
+
+    RUN_PS_ACB("ps_madd", ps_madd, 0x41100000u, 0x41880000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+    RUN_PS_ACB("ps_msub", ps_msub, 0x40E00000u, 0x41500000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+    RUN_PS_ACB("ps_nmadd", ps_nmadd, 0xC1100000u, 0xC1880000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+    RUN_PS_ACB("ps_nmsub", ps_nmsub, 0xC0E00000u, 0xC1500000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+
+    RUN_PS_B("ps_neg", ps_neg, 0x80000000u, 0x40200000u,
+             0x00000000u, 0xC0200000u);
+    RUN_PS_B("ps_abs", ps_abs, 0x00000000u, 0x40200000u,
+             0x80000000u, 0xC0200000u);
+    RUN_PS_B("ps_nabs", ps_nabs, 0x80000000u, 0xC0200000u,
+             0x00000000u, 0x40200000u);
+    RUN_PS_B("ps_mr", ps_mr, 0x80000000u, 0x40800000u,
+             0x80000000u, 0x40800000u);
+
+    RUN_PS_ACB("ps_sum0", ps_sum0, 0x40E00000u, 0x40800000u,
+               0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u,
+               0x40A00000u, 0x40C00000u);
+    RUN_PS_ACB("ps_sum1", ps_sum1, 0x40400000u, 0x40E00000u,
+               0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u,
+               0x40A00000u, 0x40C00000u);
+    RUN_PS_AC("ps_muls0", ps_muls0, 0x41000000u, 0x41400000u,
+              0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u);
+    RUN_PS_AC("ps_muls1", ps_muls1, 0x41200000u, 0x41700000u,
+              0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u);
+    RUN_PS_ACB("ps_madds0", ps_madds0, 0x41100000u, 0x41600000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+    RUN_PS_ACB("ps_madds1", ps_madds1, 0x41300000u, 0x41880000u,
+               0x40000000u, 0x40400000u, 0x40800000u, 0x40A00000u,
+               0x3F800000u, 0x40000000u);
+
+    RUN_PS_AB("ps_merge00", ps_merge00, 0x3F800000u, 0x40400000u,
+              0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u);
+    RUN_PS_AB("ps_merge01", ps_merge01, 0x3F800000u, 0x40800000u,
+              0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u);
+    RUN_PS_AB("ps_merge10", ps_merge10, 0x40000000u, 0x40400000u,
+              0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u);
+    RUN_PS_AB("ps_merge11", ps_merge11, 0x40000000u, 0x40800000u,
+              0x3F800000u, 0x40000000u, 0x40400000u, 0x40800000u);
+
+    RUN_PS_CMP("ps_cmpu0 less", ps_cmpu0, 2, 0x8,
+               0x3F800000u, 0x00000000u, 0x40000000u, 0x00000000u);
+    RUN_PS_CMP("ps_cmpo0 greater", ps_cmpo0, 3, 0x4,
+               0x40800000u, 0x00000000u, 0x40400000u, 0x00000000u);
+    RUN_PS_CMP("ps_cmpu1 unordered", ps_cmpu1, 4, 0x1,
+               0x00000000u, 0x7FC00000u, 0x00000000u, 0x40000000u);
+    RUN_PS_CMP("ps_cmpo1 equal", ps_cmpo1, 5, 0x2,
+               0x00000000u, 0x40000000u, 0x00000000u, 0x40000000u);
+
+    RUN_PS_ACB("ps_sel", ps_sel, 0x41F00000u, 0x41A00000u,
+               0x3F800000u, 0xBF800000u, 0x41F00000u, 0x42200000u,
+               0x41200000u, 0x41A00000u);
+}
+
 static void test_fpu_arithmetic(void) {
     kprintf("--- FPU arithmetic ---\n");
     printf("--- FPU arithmetic ---\n");
@@ -1353,6 +1548,35 @@ static void test_fpu_arithmetic(void) {
     a = 1.1;
     asm volatile("frsp %0,%1" : "=f"(out) : "f"(a));
     check_eq(f32_bits((float)out), 0x3F8CCCCDu, "frsp rounds to single");
+
+    a = -1.0;
+    b = 4.0;
+    double c = 3.0;
+    asm volatile("fsel %0,%1,%2,%3" : "=f"(out) : "f"(a), "f"(c), "f"(b));
+    check_eq64(f64_bits(out), 0x4010000000000000ull, "fsel negative selects fB");
+
+    a = f64_from_bits(0x8000000000000000ull);
+    asm volatile("fsel %0,%1,%2,%3" : "=f"(out) : "f"(a), "f"(c), "f"(b));
+    check_eq64(f64_bits(out), 0x4008000000000000ull, "fsel negative zero selects fC");
+
+    a = f64_from_bits(0x7FF8000000000000ull);
+    asm volatile("fsel %0,%1,%2,%3" : "=f"(out) : "f"(a), "f"(c), "f"(b));
+    check_eq64(f64_bits(out), 0x4010000000000000ull, "fsel NaN selects fB");
+
+    write_fpscr(0);
+    asm volatile("mtfsb1 31");
+    check_eq(read_fpscr(), 0x00000001u, "mtfsb1 sets selected bit");
+    asm volatile("mtfsb0 31");
+    check_eq(read_fpscr(), 0x00000000u, "mtfsb0 clears selected bit");
+    asm volatile("mtfsb1 0");
+    check_eq(read_fpscr(), 0x80000000u, "mtfsb1 sets FX bit");
+    asm volatile("mtfsb0 0");
+    check_eq(read_fpscr(), 0, "mtfsb0 clears FX");
+    asm volatile("mtfsb1 1");
+    check_eq(read_fpscr(), 0, "mtfsb1 leaves FEX unchanged");
+    asm volatile("mtfsb1 2");
+    check_eq(read_fpscr(), 0, "mtfsb1 leaves VX unchanged");
+    write_fpscr(0);
 
     a = 1.0;
     b = 2.0;
@@ -1468,6 +1692,7 @@ int main(void) {
     test_indexed_memory();
     test_fpu_memory();
     test_psq_memory();
+    test_paired_single_arithmetic();
     test_fpu_arithmetic();
     test_branches_and_spr();
 

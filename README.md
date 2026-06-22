@@ -18,7 +18,7 @@ include/        - public headers if we end up needing them
 
 ## Opcodes
 
-The current CPU opcode set has 139 implemented opcodes.
+The current CPU opcode set has 169 implemented opcodes.
 
 | Area | Opcodes |
 |------|---------|
@@ -28,8 +28,10 @@ The current CPU opcode set has 139 implemented opcodes.
 | Logical / rotate / shift | and, andc, andi., andis., cntlzw, eqv, extsb, extsh, nand, nor, or, orc, ori, oris, rlwimi, rlwinm, rlwnm, slw, sraw, srawi, srw, xor, xori, xoris |
 | Loads | lbz, lbzu, lbzx, lbzux, lfd, lfdu, lfdux, lfdx, lfs, lfsu, lfsux, lfsx, lha, lhau, lhax, lhaux, lhbrx, lhz, lhzu, lhzx, lhzux, lmw, lwbrx, lwz, lwzu, lwzx, lwzux |
 | Stores | stb, stbu, stbux, stbx, stfd, stfdu, stfdux, stfdx, stfs, stfsu, stfsux, stfsx, sth, sthbrx, sthu, sthux, sthx, stmw, stw, stwbrx, stwu, stwux, stwx |
-| Floating point | fabs, fadd, fadds, fcmpo, fcmpu, fdiv, fdivs, fmr, fmul, fmuls, fneg, fnabs, frsp, fsub, fsubs |
+| Floating point | fabs, fadd, fadds, fcmpo, fcmpu, fdiv, fdivs, fmr, fmul, fmuls, fneg, fnabs, frsp, fsel, fsub, fsubs |
+| FPSCR control | mtfsb0, mtfsb1 |
 | Paired-single memory | psq_l, psq_lu, psq_lux, psq_lx, psq_st, psq_stu, psq_stux, psq_stx |
+| Paired-single arithmetic | ps_abs, ps_add, ps_cmpo0, ps_cmpo1, ps_cmpu0, ps_cmpu1, ps_div, ps_madd, ps_madds0, ps_madds1, ps_merge00, ps_merge01, ps_merge10, ps_merge11, ps_mr, ps_msub, ps_mul, ps_muls0, ps_muls1, ps_nabs, ps_neg, ps_nmadd, ps_nmsub, ps_sel, ps_sub, ps_sum0, ps_sum1 |
 | Cache / memory control | dcbz |
 | SPR moves | mfspr/mflr/mfctr/mfxer, mtspr/mtlr/mtctr/mtxer |
 
@@ -72,4 +74,4 @@ If `database\titles.txt` is missing, DolRecomp warns and uses GameCube mode.
 
 ## contributing
 
-no
+todo
