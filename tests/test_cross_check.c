@@ -148,12 +148,17 @@ static const DecodeCase cases[] = {
     { "lhzux", 0x7D442A6E, PPC_OP_LHZUX, F_RD|F_RA|F_RB, .rD=10, .rA=4, .rB=5 },
     { "lhax",  0x7D642AAE, PPC_OP_LHAX,  F_RD|F_RA|F_RB, .rD=11, .rA=4, .rB=5 },
     { "lhaux", 0x7D842AEE, PPC_OP_LHAUX, F_RD|F_RA|F_RB, .rD=12, .rA=4, .rB=5 },
+    { "lwbrx", 0x7C642C2C, PPC_OP_LWBRX, F_RD|F_RA|F_RB, .rD=3,  .rA=4,  .rB=5 },
+    { "lhbrx", 0x7CC7462C, PPC_OP_LHBRX, F_RD|F_RA|F_RB, .rD=6,  .rA=7,  .rB=8 },
     { "stwx",  0x7C64292E, PPC_OP_STWX,  F_RS|F_RA|F_RB, .rS=3,  .rA=4, .rB=5 },
     { "stwux", 0x7CC4296E, PPC_OP_STWUX, F_RS|F_RA|F_RB, .rS=6,  .rA=4, .rB=5 },
     { "stbx",  0x7CE429AE, PPC_OP_STBX,  F_RS|F_RA|F_RB, .rS=7,  .rA=4, .rB=5 },
     { "stbux", 0x7D0429EE, PPC_OP_STBUX, F_RS|F_RA|F_RB, .rS=8,  .rA=4, .rB=5 },
     { "sthx",  0x7D242B2E, PPC_OP_STHX,  F_RS|F_RA|F_RB, .rS=9,  .rA=4, .rB=5 },
     { "sthux", 0x7D442B6E, PPC_OP_STHUX, F_RS|F_RA|F_RB, .rS=10, .rA=4, .rB=5 },
+    { "stwbrx", 0x7D2A5D2C, PPC_OP_STWBRX, F_RS|F_RA|F_RB, .rS=9,  .rA=10, .rB=11 },
+    { "sthbrx", 0x7D8D772C, PPC_OP_STHBRX, F_RS|F_RA|F_RB, .rS=12, .rA=13, .rB=14 },
+    { "dcbz",   0x7C0F87EC, PPC_OP_DCBZ,   F_RA|F_RB,      .rA=15, .rB=16 },
 };
 
 static int pass = 0;
@@ -183,7 +188,7 @@ int main(void) {
     int num_cases = (int)(sizeof(cases) / sizeof(cases[0]));
     printf("cross-check: %d opcodes against devkitPPC ground truth\n\n", num_cases);
 
-    check((PPC_OP_COUNT - 1) == 90, -1, "opcode count", PPC_OP_COUNT - 1, 90);
+    check((PPC_OP_COUNT - 1) == 95, -1, "opcode count", PPC_OP_COUNT - 1, 95);
 
     for (int n = 0; n < num_cases; n++) {
         const DecodeCase* c = &cases[n];

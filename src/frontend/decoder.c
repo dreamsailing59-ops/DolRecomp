@@ -329,7 +329,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.spr = PPC_SPR(raw);
             break;
         case 476: decode_x_rs_ra_rb(&inst, PPC_OP_NAND, raw); break;
+        case 534: decode_x_rt_ra_rb(&inst, PPC_OP_LWBRX, raw); break;
         case 536: decode_x_rs_ra_rb(&inst, PPC_OP_SRW, raw); break;
+        case 662: decode_x_rs_ra_rb(&inst, PPC_OP_STWBRX, raw); break;
+        case 790: decode_x_rt_ra_rb(&inst, PPC_OP_LHBRX, raw); break;
         case 792: decode_x_rs_ra_rb(&inst, PPC_OP_SRAW, raw); break;
         case 824:
             inst.op = PPC_OP_SRAWI;
@@ -338,8 +341,14 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.sh = PPC_SH(raw);
             inst.rc = PPC_RC(raw);
             break;
+        case 918: decode_x_rs_ra_rb(&inst, PPC_OP_STHBRX, raw); break;
         case 922: decode_x_rs_ra_rb(&inst, PPC_OP_EXTSH, raw); break;
         case 954: decode_x_rs_ra_rb(&inst, PPC_OP_EXTSB, raw); break;
+        case 1014:
+            inst.op = PPC_OP_DCBZ;
+            inst.rA = PPC_RA(raw);
+            inst.rB = PPC_RB(raw);
+            break;
         default:
             inst.op = PPC_OP_UNKNOWN;
             break;
@@ -458,12 +467,17 @@ static const char* opcode_names[PPC_OP_COUNT] = {
     [PPC_OP_LHZUX]   = "lhzux",
     [PPC_OP_LHAX]    = "lhax",
     [PPC_OP_LHAUX]   = "lhaux",
+    [PPC_OP_LWBRX]   = "lwbrx",
+    [PPC_OP_LHBRX]   = "lhbrx",
     [PPC_OP_STWX]    = "stwx",
     [PPC_OP_STWUX]   = "stwux",
     [PPC_OP_STBX]    = "stbx",
     [PPC_OP_STBUX]   = "stbux",
     [PPC_OP_STHX]    = "sthx",
     [PPC_OP_STHUX]   = "sthux",
+    [PPC_OP_STWBRX]  = "stwbrx",
+    [PPC_OP_STHBRX]  = "sthbrx",
+    [PPC_OP_DCBZ]    = "dcbz",
 };
 
 const char* ppc_op_name(PPCOpcode op) {
@@ -691,6 +705,8 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
     case PPC_OP_LHZUX:
     case PPC_OP_LHAX:
     case PPC_OP_LHAUX:
+    case PPC_OP_LWBRX:
+    case PPC_OP_LHBRX:
         snprintf(buf, buf_size, "%s    r%u, r%u, r%u",
                  ppc_op_name(inst->op), inst->rD, inst->rA, inst->rB);
         break;
@@ -701,8 +717,18 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
     case PPC_OP_STBUX:
     case PPC_OP_STHX:
     case PPC_OP_STHUX:
+    case PPC_OP_STWBRX:
+    case PPC_OP_STHBRX:
         snprintf(buf, buf_size, "%s    r%u, r%u, r%u",
                  ppc_op_name(inst->op), inst->rS, inst->rA, inst->rB);
+        break;
+
+    case PPC_OP_DCBZ:
+        if (inst->rA == 0) {
+            snprintf(buf, buf_size, "dcbz    0, r%u", inst->rB);
+        } else {
+            snprintf(buf, buf_size, "dcbz    r%u, r%u", inst->rA, inst->rB);
+        }
         break;
 
     case PPC_OP_B: {

@@ -534,6 +534,18 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_LWBRX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        cpu->gpr[inst->rD] = bswap32(mem_read32(cpu, ea));
+        break;
+    }
+
+    case PPC_OP_LHBRX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        cpu->gpr[inst->rD] = bswap16(mem_read16(cpu, ea));
+        break;
+    }
+
     case PPC_OP_STW:
     case PPC_OP_STWU: {
         bool update = inst->op == PPC_OP_STWU;
@@ -588,6 +600,18 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_STWBRX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        mem_write32(cpu, ea, bswap32(cpu->gpr[inst->rS]));
+        break;
+    }
+
+    case PPC_OP_STHBRX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        mem_write16(cpu, ea, bswap16((u16)cpu->gpr[inst->rS]));
+        break;
+    }
+
     case PPC_OP_LMW: {
         u32 ea = dform_ea(cpu, inst, false);
         for (u32 r = inst->rD; r < 32; r++, ea += 4)
@@ -599,6 +623,13 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         u32 ea = dform_ea(cpu, inst, false);
         for (u32 r = inst->rS; r < 32; r++, ea += 4)
             mem_write32(cpu, ea, cpu->gpr[r]);
+        break;
+    }
+
+    case PPC_OP_DCBZ: {
+        u32 ea = xform_ea(cpu, inst, false) & ~31u;
+        for (u32 i = 0; i < 32; i += 4)
+            mem_write32(cpu, ea + i, 0);
         break;
     }
 
@@ -1152,6 +1183,53 @@ static void test_indexed_memory(CPUState* cpu) {
     exec_raw(cpu, 0x7D442B6E, BASE);
     check_eq(mem_read16(cpu, base + 0x34), 0xFACE, "sthux");
     check_eq(cpu->gpr[4], base + 0x34, "sthux updates rA");
+
+    mem_write32(cpu, base + 0x38, 0x01020304);
+    cpu->gpr[4] = base;
+    cpu->gpr[5] = 0x38;
+    exec_raw(cpu, 0x7C642C2C, BASE);
+    check_eq(cpu->gpr[3], 0x04030201, "lwbrx byte-reverses word");
+
+    mem_write32(cpu, base + 0x60, 0x11223344);
+    cpu->gpr[5] = base + 0x60;
+    exec_raw(cpu, 0x7C602C2C, BASE);
+    check_eq(cpu->gpr[3], 0x44332211, "lwbrx uses zero base when rA is zero");
+
+    mem_write16(cpu, base + 0x3C, 0x1234);
+    cpu->gpr[7] = base;
+    cpu->gpr[8] = 0x3C;
+    exec_raw(cpu, 0x7CC7462C, BASE);
+    check_eq(cpu->gpr[6], 0x3412, "lhbrx byte-reverses halfword");
+
+    cpu->gpr[10] = base;
+    cpu->gpr[11] = 0x40;
+    cpu->gpr[9] = 0xA1B2C3D4;
+    exec_raw(cpu, 0x7D2A5D2C, BASE);
+    check_eq(mem_read32(cpu, base + 0x40), 0xD4C3B2A1, "stwbrx byte-reverses word");
+
+    cpu->gpr[13] = base;
+    cpu->gpr[14] = 0x44;
+    cpu->gpr[12] = 0x00001234;
+    exec_raw(cpu, 0x7D8D772C, BASE);
+    check_eq(mem_read16(cpu, base + 0x44), 0x3412, "sthbrx byte-reverses halfword");
+
+    mem_write32(cpu, base + 0x7C, 0x11111111);
+    for (u32 i = 0; i < 32; i += 4)
+        mem_write32(cpu, base + 0x80 + i, 0xFFFFFFFF);
+    mem_write32(cpu, base + 0xA0, 0x22222222);
+    cpu->gpr[15] = base + 0x80;
+    cpu->gpr[16] = 0x13;
+    exec_raw(cpu, 0x7C0F87EC, BASE);
+    check_eq(mem_read32(cpu, base + 0x80), 0, "dcbz clears first word of cache block");
+    check_eq(mem_read32(cpu, base + 0x9C), 0, "dcbz clears last word of cache block");
+    check_eq(mem_read32(cpu, base + 0x7C), 0x11111111, "dcbz leaves previous block");
+    check_eq(mem_read32(cpu, base + 0xA0), 0x22222222, "dcbz leaves next block");
+
+    for (u32 i = 0; i < 32; i += 4)
+        mem_write32(cpu, base + 0xC0 + i, 0x77777777);
+    cpu->gpr[16] = base + 0xD7;
+    exec_raw(cpu, 0x7C0087EC, BASE);
+    check_eq(mem_read32(cpu, base + 0xC0), 0, "dcbz uses zero base when rA is zero");
 }
 
 static void check_cr_logic(CPUState* cpu, const char* name, u32 xo,

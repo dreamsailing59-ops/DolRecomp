@@ -130,6 +130,16 @@ static void emit_storex(FILE* out, const PPCInst* inst, const char* write_func,
     fprintf(out, "    }\n");
 }
 
+static void emit_dcbz(FILE* out, const PPCInst* inst) {
+    fprintf(out, "    {\n");
+    fprintf(out, "        u32 ea = ");
+    emit_xform_ea(out, inst->rA, inst->rB, false);
+    fprintf(out, ";\n");
+    fprintf(out, "        ea &= ~31u;\n");
+    fprintf(out, "        for (u32 i = 0; i < 32; i += 4) mem_write32(ctx, ea + i, 0);\n");
+    fprintf(out, "    }\n");
+}
+
 static void emit_branch_condition(FILE* out, u8 bo, u8 bi) {
     bool ctr_ignored = (bo & 0x04) != 0;
     bool cond_ignored = (bo & 0x10) != 0;
@@ -151,11 +161,20 @@ static void emit_branch_condition(FILE* out, u8 bo, u8 bi) {
     }
 }
 
-static void emit_direct_branch(FILE* out, const PPCInst* inst) {
+static bool branch_target_is_local(u32 func_start, u32 func_end, u32 target) {
+    return target >= func_start && target < func_end && ((target - func_start) & 3u) == 0;
+}
+
+static void emit_direct_branch(FILE* out, const PPCInst* inst, bool local_target) {
     if (inst->lk) {
         fprintf(out, "            ctx->lr = 0x%08Xu;\n", inst->address + 4);
     }
-    fprintf(out, "            goto label_%08X;\n", inst->branch_target);
+    if (local_target) {
+        fprintf(out, "            goto label_%08X;\n", inst->branch_target);
+    } else {
+        fprintf(out, "            ctx->pc = 0x%08Xu;\n", inst->branch_target);
+        fprintf(out, "            return;\n");
+    }
 }
 
 static void emit_dynamic_branch(FILE* out, const PPCInst* inst,
@@ -207,7 +226,8 @@ void emit_footer(FILE* out) {
     fprintf(out, "\n// end of recompiled output\n");
 }
 
-void emit_instruction(FILE* out, const PPCInst* inst) {
+static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
+                                        u32 func_start, u32 func_end) {
     char disasm[64];
     ppc_disasm(disasm, sizeof(disasm), inst);
     fprintf(out, "    // %08X: %s\n", inst->address, disasm);
@@ -571,6 +591,8 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
     case PPC_OP_LHZUX: emit_loadx(out, inst, "mem_read16(ctx, ea)", true); break;
     case PPC_OP_LHAX:  emit_loadx(out, inst, "(u32)(s32)(s16)mem_read16(ctx, ea)", false); break;
     case PPC_OP_LHAUX: emit_loadx(out, inst, "(u32)(s32)(s16)mem_read16(ctx, ea)", true); break;
+    case PPC_OP_LWBRX: emit_loadx(out, inst, "bswap32(mem_read32(ctx, ea))", false); break;
+    case PPC_OP_LHBRX: emit_loadx(out, inst, "bswap16(mem_read16(ctx, ea))", false); break;
 
     case PPC_OP_STW:  emit_store(out, inst, "mem_write32", "u32", false); break;
     case PPC_OP_STWU: emit_store(out, inst, "mem_write32", "u32", true); break;
@@ -585,6 +607,28 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
     case PPC_OP_STBUX: emit_storex(out, inst, "mem_write8", "u8", true); break;
     case PPC_OP_STHX:  emit_storex(out, inst, "mem_write16", "u16", false); break;
     case PPC_OP_STHUX: emit_storex(out, inst, "mem_write16", "u16", true); break;
+
+    case PPC_OP_STWBRX:
+        fprintf(out, "    {\n");
+        fprintf(out, "        u32 ea = ");
+        emit_xform_ea(out, inst->rA, inst->rB, false);
+        fprintf(out, ";\n");
+        fprintf(out, "        mem_write32(ctx, ea, bswap32(ctx->gpr[%u]));\n", inst->rS);
+        fprintf(out, "    }\n");
+        break;
+
+    case PPC_OP_STHBRX:
+        fprintf(out, "    {\n");
+        fprintf(out, "        u32 ea = ");
+        emit_xform_ea(out, inst->rA, inst->rB, false);
+        fprintf(out, ";\n");
+        fprintf(out, "        mem_write16(ctx, ea, bswap16((u16)ctx->gpr[%u]));\n", inst->rS);
+        fprintf(out, "    }\n");
+        break;
+
+    case PPC_OP_DCBZ:
+        emit_dcbz(out, inst);
+        break;
 
     case PPC_OP_LMW:
         fprintf(out, "    {\n");
@@ -608,7 +652,8 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
 
     case PPC_OP_B:
         fprintf(out, "    {\n");
-        emit_direct_branch(out, inst);
+        emit_direct_branch(out, inst,
+                           branch_target_is_local(func_start, func_end, inst->branch_target));
         fprintf(out, "    }\n");
         break;
 
@@ -616,7 +661,8 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
         fprintf(out, "    {\n");
         emit_branch_condition(out, inst->bo, inst->bi);
         fprintf(out, "        if (ctr_ok && cr_ok) {\n");
-        emit_direct_branch(out, inst);
+        emit_direct_branch(out, inst,
+                           branch_target_is_local(func_start, func_end, inst->branch_target));
         fprintf(out, "        }\n");
         fprintf(out, "    }\n");
         break;
@@ -699,14 +745,19 @@ void emit_instruction(FILE* out, const PPCInst* inst) {
     fprintf(out, "\n");
 }
 
+void emit_instruction(FILE* out, const PPCInst* inst) {
+    emit_instruction_with_range(out, inst, 0, (u32)-1);
+}
+
 void emit_function(FILE* out, const PPCInst* insts, u32 count, u32 func_addr) {
     u32 i;
+    u32 func_end = func_addr + count * 4u;
 
     fprintf(out, "void func_%08X(CPUState* ctx) {\n", func_addr);
 
     for (i = 0; i < count; i++) {
         fprintf(out, "label_%08X:\n", insts[i].address);
-        emit_instruction(out, &insts[i]);
+        emit_instruction_with_range(out, &insts[i], func_addr, func_end);
     }
 
     fprintf(out, "}\n\n");

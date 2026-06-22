@@ -109,12 +109,17 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x7D442A6E, PPC_OP_LHZUX, "lhzux" },
     { 0x7D642AAE, PPC_OP_LHAX, "lhax" },
     { 0x7D842AEE, PPC_OP_LHAUX, "lhaux" },
+    { 0x7C642C2C, PPC_OP_LWBRX, "lwbrx" },
+    { 0x7CC7462C, PPC_OP_LHBRX, "lhbrx" },
     { 0x7C64292E, PPC_OP_STWX, "stwx" },
     { 0x7CC4296E, PPC_OP_STWUX, "stwux" },
     { 0x7CE429AE, PPC_OP_STBX, "stbx" },
     { 0x7D0429EE, PPC_OP_STBUX, "stbux" },
     { 0x7D242B2E, PPC_OP_STHX, "sthx" },
     { 0x7D442B6E, PPC_OP_STHUX, "sthux" },
+    { 0x7D2A5D2C, PPC_OP_STWBRX, "stwbrx" },
+    { 0x7D8D772C, PPC_OP_STHBRX, "sthbrx" },
+    { 0x7C0F87EC, PPC_OP_DCBZ, "dcbz" },
 };
 
 static u32 make_dform(u32 opcd, u32 rt, u32 ra, u16 imm) {
@@ -139,16 +144,16 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 90\n");
-    CHECK(PPC_OP_COUNT - 1 == 90, "should expose 90 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 95\n");
+    CHECK(PPC_OP_COUNT - 1 == 95, "should expose 95 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 90-opcode set\n");
+    printf("  decode every opcode in the current 95-opcode set\n");
 
-    CHECK(count == 90, "opcode table should have 90 entries, got %d", count);
+    CHECK(count == 95, "opcode table should have 95 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
         PPCInst inst = ppc_decode(opcode_cases[i].raw, BASE + (u32)(i * 4));
@@ -192,6 +197,10 @@ static int test_pseudoops_and_display(void) {
     ppc_disasm(buf, sizeof(buf), &inst);
     CHECK(strcmp(buf, "mtcrf   0x90, r10") == 0, "mtcrf disasm, got '%s'", buf);
 
+    inst = ppc_decode(0x7C0087EC, BASE);
+    ppc_disasm(buf, sizeof(buf), &inst);
+    CHECK(strcmp(buf, "dcbz    0, r16") == 0, "dcbz zero-base disasm, got '%s'", buf);
+
     return 1;
 }
 
@@ -222,6 +231,17 @@ static int test_field_edges(void) {
     inst = ppc_decode(0x7D490120, BASE);
     CHECK(inst.rS == 10, "mtcrf source register should be r10");
     CHECK(inst.crm == 0x90, "mtcrf mask should be 0x90");
+
+    inst = ppc_decode(0x7C602C2C, BASE);
+    CHECK(inst.op == PPC_OP_LWBRX, "lwbrx zero-base should decode");
+    CHECK(inst.rD == 3, "lwbrx rD should be 3");
+    CHECK(inst.rA == 0, "lwbrx rA should be 0");
+    CHECK(inst.rB == 5, "lwbrx rB should be 5");
+
+    inst = ppc_decode(0x7C0F87EC, BASE);
+    CHECK(inst.op == PPC_OP_DCBZ, "dcbz should decode");
+    CHECK(inst.rA == 15, "dcbz rA should be 15");
+    CHECK(inst.rB == 16, "dcbz rB should be 16");
 
     return 1;
 }

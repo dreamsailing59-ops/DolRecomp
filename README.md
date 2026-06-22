@@ -19,7 +19,7 @@ include/        - public headers if we end up needing them
 
 ## Opcodes
 
-The current CPU opcode set has 90 implemented opcodes.
+The current CPU opcode set has 95 implemented opcodes.
 
 | Area | Opcodes |
 |------|---------|
@@ -27,8 +27,9 @@ The current CPU opcode set has 90 implemented opcodes.
 | Register arithmetic | add, addc, adde, addze, neg, subf, subfc, subfe, subfze |
 | Compare / branch / CR | b[l][a], bc[l][a], bclr/blr, bcctr/bctr, cmp/cmpw, cmpi/cmpwi, cmpl/cmplw, cmpli/cmplwi, crand, crandc, creqv, crnand, crnor, cror, crorc, crxor, mcrf, mfcr, mtcrf |
 | Logical / rotate / shift | and, andc, andi., andis., cntlzw, eqv, extsb, extsh, nand, nor, or, orc, ori, oris, rlwimi, rlwinm, rlwnm, slw, sraw, srawi, srw, xor, xori, xoris |
-| Loads | lbz, lbzu, lbzx, lbzux, lha, lhau, lhax, lhaux, lhz, lhzu, lhzx, lhzux, lmw, lwz, lwzu, lwzx, lwzux |
-| Stores | stb, stbu, stbux, stbx, sth, sthu, sthux, sthx, stmw, stw, stwu, stwux, stwx |
+| Loads | lbz, lbzu, lbzx, lbzux, lha, lhau, lhax, lhaux, lhbrx, lhz, lhzu, lhzx, lhzux, lmw, lwbrx, lwz, lwzu, lwzx, lwzux |
+| Stores | stb, stbu, stbux, stbx, sth, sthbrx, sthu, sthux, sthx, stmw, stw, stwbrx, stwu, stwux, stwx |
+| Cache / memory control | dcbz |
 | SPR moves | mfspr/mflr/mfctr/mfxer, mtspr/mtlr/mtctr/mtxer |
 
 ## building

@@ -92,12 +92,17 @@ typedef enum {
     PPC_OP_LHZUX,
     PPC_OP_LHAX,
     PPC_OP_LHAUX,
+    PPC_OP_LWBRX,
+    PPC_OP_LHBRX,
     PPC_OP_STWX,
     PPC_OP_STWUX,
     PPC_OP_STBX,
     PPC_OP_STBUX,
     PPC_OP_STHX,
     PPC_OP_STHUX,
+    PPC_OP_STWBRX,
+    PPC_OP_STHBRX,
+    PPC_OP_DCBZ,
     PPC_OP_COUNT
 } PPCOpcode;
 

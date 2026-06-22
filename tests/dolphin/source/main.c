@@ -899,6 +899,58 @@ static void test_indexed_memory(void) {
     asm volatile("sthux %1,%0,%2" : "+r"(hp) : "r"(value), "r"(off) : "memory");
     check_eq(halves[0x18], 0xFACE, "sthux");
     check((u32)hp == (u32)&halves[0x18], "sthux updates rA");
+
+    words[8] = 0x01020304u;
+    off = 8 * sizeof(words[0]);
+    asm volatile("lwbrx %0,%1,%2" : "=r"(result) : "r"(words), "r"(off) : "memory");
+    check_eq(result, 0x04030201u, "lwbrx byte-reverses word");
+
+    words[12] = 0x11223344u;
+    asm volatile("lwbrx %0,0,%1" : "=r"(result) : "r"(&words[12]) : "memory");
+    check_eq(result, 0x44332211u, "lwbrx uses zero base when rA is zero");
+
+    halves[0x1A] = 0x1234u;
+    off = 0x1A * sizeof(halves[0]);
+    asm volatile("lhbrx %0,%1,%2" : "=r"(result) : "r"(halves), "r"(off) : "memory");
+    check_eq(result, 0x3412u, "lhbrx byte-reverses halfword");
+
+    words[9] = 0;
+    value = 0xA1B2C3D4u;
+    off = 9 * sizeof(words[0]);
+    asm volatile("stwbrx %0,%1,%2" : : "r"(value), "r"(words), "r"(off) : "memory");
+    check_eq(words[9], 0xD4C3B2A1u, "stwbrx byte-reverses word");
+
+    halves[0x1B] = 0;
+    value = 0x00001234u;
+    off = 0x1B * sizeof(halves[0]);
+    asm volatile("sthbrx %0,%1,%2" : : "r"(value), "r"(halves), "r"(off) : "memory");
+    check_eq(halves[0x1B], 0x3412u, "sthbrx byte-reverses halfword");
+
+    static volatile u32 dcbz_words[16] __attribute__((aligned(32)));
+    dcbz_words[7] = 0x11111111u;
+    for (u32 i = 8; i < 16; i++)
+        dcbz_words[i] = 0xFFFFFFFFu;
+    asm volatile(
+        "dcbz %0,%1\n"
+        "sync\n"
+        :
+        : "r"(&dcbz_words[8]), "r"(0x13u)
+        : "memory"
+    );
+    check_eq(dcbz_words[8], 0, "dcbz clears first word of cache block");
+    check_eq(dcbz_words[15], 0, "dcbz clears last word of cache block");
+    check_eq(dcbz_words[7], 0x11111111u, "dcbz leaves previous block");
+
+    for (u32 i = 0; i < 8; i++)
+        dcbz_words[i] = 0x77777777u;
+    asm volatile(
+        "dcbz 0,%0\n"
+        "sync\n"
+        :
+        : "r"((u8*)&dcbz_words[0] + 0x17)
+        : "memory"
+    );
+    check_eq(dcbz_words[0], 0, "dcbz uses zero base when rA is zero");
 }
 
 static void test_branches_and_spr(void) {

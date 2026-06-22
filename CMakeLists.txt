@@ -48,3 +48,20 @@ add_executable(test_pc_reference
 )
 target_include_directories(test_pc_reference PRIVATE src)
 add_test(NAME pc_reference COMMAND test_pc_reference)
+
+# Generate C for the current opcode set and make sure the host compiler accepts it.
+add_executable(test_codegen_emit
+    tests/test_codegen_emit.c
+    src/frontend/decoder.c
+    src/backend/emitter.c
+)
+target_include_directories(test_codegen_emit PRIVATE src)
+add_test(NAME codegen_compile
+    COMMAND ${CMAKE_COMMAND}
+        -DGENERATOR_EXE=$<TARGET_FILE:test_codegen_emit>
+        -DOUTPUT_C=${CMAKE_CURRENT_BINARY_DIR}/codegen_smoke.c
+        -DOUTPUT_OBJ=${CMAKE_CURRENT_BINARY_DIR}/codegen_smoke.c.o
+        -DCC=${CMAKE_C_COMPILER}
+        -DREPO_SRC=${CMAKE_CURRENT_SOURCE_DIR}/src
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/codegen_compile.cmake
+)

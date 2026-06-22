@@ -99,12 +99,17 @@ lhzx r9, r4, r5
 lhzux r10, r4, r5
 lhax r11, r4, r5
 lhaux r12, r4, r5
+lwbrx r3, r4, r5
+lhbrx r6, r7, r8
 stwx r3, r4, r5
 stwux r6, r4, r5
 stbx r7, r4, r5
 stbux r8, r4, r5
 sthx r9, r4, r5
 sthux r10, r4, r5
+stwbrx r9, r10, r11
+sthbrx r12, r13, r14
+dcbz r15, r16
 
 branch_target:
 nop

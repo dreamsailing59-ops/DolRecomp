@@ -8,6 +8,8 @@
 #include "backend/emitter.h"
 #include "runtime/runtime.h"
 
+#define EMIT_CHUNK_INSTRUCTIONS 4096u
+
 static void print_usage(const char* argv0) {
     fprintf(stderr, "usage: %s <input.dol> [output.c]\n", argv0);
     fprintf(stderr, "\n");
@@ -76,8 +78,14 @@ int main(int argc, char** argv) {
         printf("  %u decoded, %u known, %u unknown\n",
                decoded, decoded - unknown, unknown);
 
-        // TODO: function boundary detection
-        emit_function(out, insts, num_insts, base_addr);
+        // TODO: real function boundary detection. For now, keep generated C
+        // functions bounded so large DOLs remain compiler-friendly.
+        for (u32 start = 0; start < num_insts; start += EMIT_CHUNK_INSTRUCTIONS) {
+            u32 chunk_count = num_insts - start;
+            if (chunk_count > EMIT_CHUNK_INSTRUCTIONS)
+                chunk_count = EMIT_CHUNK_INSTRUCTIONS;
+            emit_function(out, insts + start, chunk_count, base_addr + start * 4u);
+        }
 
         free(insts);
     }
