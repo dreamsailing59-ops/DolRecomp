@@ -441,6 +441,11 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
     ppc_disasm(disasm, sizeof(disasm), inst);
     fprintf(out, "    // %08X: %s\n", inst->address, disasm);
 
+    if (inst->embedded_data) {
+        fprintf(out, "    // embedded data\n\n");
+        return;
+    }
+
     switch (inst->op) {
     case PPC_OP_MULLI:
         fprintf(out, "    ctx->gpr[%u] = (u32)((s64)(s32)ctx->gpr[%u] * (s64)(s32)%d);\n",
@@ -1653,7 +1658,7 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         case 282: fprintf(out, "    ctx->gpr[%u] = ctx->ear;\n", inst->rD); break;
         case 920: fprintf(out, "    ctx->gpr[%u] = ctx->hid2;\n", inst->rD); break;
         default:
-            fprintf(out, "    // TODO: mfspr %u\n", inst->spr);
+            fprintf(out, "    // unsupported mfspr %u\n", inst->spr);
             fprintf(out, "    ctx->gpr[%u] = 0;\n", inst->rD);
             break;
         }
@@ -1677,7 +1682,7 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         case 919: fprintf(out, "    ctx->gqr[7] = ctx->gpr[%u];\n", inst->rS); break;
         case 920: fprintf(out, "    ctx->hid2 = ctx->gpr[%u];\n", inst->rS); break;
         default:
-            fprintf(out, "    // TODO: mtspr %u\n", inst->spr);
+            fprintf(out, "    // unsupported mtspr %u\n", inst->spr);
             break;
         }
         break;
@@ -1717,7 +1722,7 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         break;
 
     default:
-        fprintf(out, "    // TODO: unimplemented (raw: 0x%08X)\n", inst->raw);
+        fprintf(out, "    // unsupported instruction (raw: 0x%08X)\n", inst->raw);
         break;
     }
 

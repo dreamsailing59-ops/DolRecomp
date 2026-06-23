@@ -3185,7 +3185,7 @@ int main(void) {
     if (!cpu_init(&cpu))
         return 1;
 
-    printf("PC reference check against Dolphin opcode expectations\n\n");
+    printf("PC CPU behavior checks\n\n");
 
     test_immediate_arithmetic(&cpu);
     test_compare_and_bc(&cpu);

@@ -4,7 +4,7 @@ project(DolRecomp C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# just warnings, nothing crazy
+# Portable warnings for local development and CI.
 if(MSVC)
     add_compile_options(/W3)
 else()
@@ -40,6 +40,7 @@ add_executable(dolrecomp
     src/main.c
     src/frontend/dol.c
     src/frontend/rpx.c
+    src/frontend/disc_extract.c
     src/frontend/decoder.c
     src/backend/emitter.c
 )
@@ -83,7 +84,17 @@ if(ZLIB_FOUND)
 endif()
 add_test(NAME rpx COMMAND test_rpx)
 
-# PC-side behavior checks against Dolphin-derived expectations
+add_executable(test_disc_extract
+    tests/test_disc_extract.c
+)
+target_include_directories(test_disc_extract PRIVATE src)
+add_test(NAME disc_extract
+    COMMAND test_disc_extract
+        $<SHELL_PATH:$<TARGET_FILE:dolrecomp>>
+        $<SHELL_PATH:${CMAKE_CURRENT_BINARY_DIR}/disc_extract_test>
+)
+
+# PC-side CPU behavior checks.
 add_executable(test_pc_reference
     tests/test_pc_reference.c
     src/frontend/decoder.c

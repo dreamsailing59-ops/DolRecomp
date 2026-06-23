@@ -1,5 +1,12 @@
 # Build
 build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
 out/
 
 # IDE / editor
@@ -29,12 +36,22 @@ extern/*/
 
 # Test artifacts
 tests/data/*.dol
+tests/data/*.elf
 tests/data/*.rel
+tests/data/*.rpx
+tests/data/*.rpl
+tests/data/*.iso
+tests/data/*.gcm
 
 # discs and test output
 *.elf
 *.dol
+*.rpx
+*.rpl
+*.iso
+*.gcm
 discs/
+generated/
 
 
 # Local database for title ids

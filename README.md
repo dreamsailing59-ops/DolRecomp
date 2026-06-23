@@ -1,26 +1,86 @@
 # DolRecomp
 
-DolRecomp is a static recompiler for GameCube and Wii PowerPC code. It reads DOLs, decodes the CPU instructions, and writes split C output that can be built somewhere else. (here it is pc)
+DolRecomp is a static recompiler for GameCube, Wii, and experimental Wii U CPU code. It reads executable code sections, decodes PowerPC instructions, and emits split C that can be compiled and tested on a PC.
 
-Right now the focus is the CPU side. Runtime work is going to be separate.
+The current project is CPU only. You will need to supply your own runtime.
 
-It is in the same general lane as [N64Recomp](https://github.com/N64Recomp/N64Recomp), and it replaces the older [GCRecompiler](https://github.com/ExpansionPak/GCRecompiler) style of one-game hardcoding with something that can handle normal GameCube/Wii executables. Wii U support has started too: RPX files can be opened, executable sections can be decoded, and the CPU profile is marked as Espresso.
+## Status
 
-## structure
+- GameCube/Wii DOL loading works.
+- Wii U RPX loading works for executable sections. Compressed RPX sections need zlib.
+- The decoder currently recognizes 236 PowerPC/Gekko/Broadway/Espresso opcodes.
+- The backend emits C in split chunks with `-jN` worker support.
+- The generated C is a compile target and CPU behavior test surface, not a full game runtime yet.
 
+## Build
+
+Requirements:
+
+- CMake 3.16 or newer
+- A C11 compiler
+- zlib, optional but required for compressed RPX sections (Wii U)
+
+From the repo root:
+
+```sh
+cmake -S . -B build
+cmake --build build --config Release -j 14
+ctest --test-dir build -C Release --output-on-failure
 ```
-src/
-  frontend/     - DOL/RPX loading and PPC decode
-  backend/      - C output
-  core/         - CPU helpers used by generated code and tests
 
-tools/          - standalone utilities
-docs/           - notes and specs
-scripts/        - build/test helpers
-include/        - public headers if needed later
+On Windows, Clang, GCC/MinGW, and MSVC-style generators should all work. If devkitPro is installed, CMake also checks its MSYS2 zlib location.
+
+devkitPro is highly recommended for Wii U recomps.
+
+## Usage
+
+Set up the local title database if you want Wii title names in CLI output. Setup also offers to download Wiimms ISO Tools if `wit` is missing:
+
+```sh
+dolrecomp.exe --setup
 ```
 
-## Opcodes
+Wii DOLs require a six-character title ID:
+
+```sh
+dolrecomp.exe -j14 path\to\main.dol SUKE01 build
+```
+
+GameCube DOLs do not use a title ID:
+
+```sh
+dolrecomp.exe --gamecube path\to\main.dol build
+```
+
+Wii U uses the Espresso CPU profile and takes an RPX:
+
+```sh
+dolrecomp.exe --cpu espresso path\to\main.rpx build
+```
+You cannot specify --gamecube while using espresso.
+
+Disc extraction is available as a subcommand for future installer work. It accepts `.iso` and `.wbfs` only:
+
+```sh
+dolrecomp.exe extract game.iso extracted
+dolrecomp.exe extract game.wbfs extracted
+```
+
+GameCube ISO extraction is built in. Wii ISO/WBFS extraction uses Wiimms ISO Tool (`wit`) when needed. Run `dolrecomp.exe --setup` to install a local copy, or pass a path manually:
+
+```sh
+dolrecomp.exe extract --wit C:\tools\wit\wit.exe game.wbfs extracted
+```
+
+Output rules:
+
+- If the last argument ends in `.c`, that exact split-output manifest is used.
+- If the last argument is a directory, Wii output goes under `<title-id>_generated\`.
+- GameCube and Wii U directory output goes under `generated\`.
+- `-jN` controls how many worker jobs write split C chunks.
+- If `database\titles.txt` is missing during Wii mode, DolRecomp prints a warning and uses GameCube mode.
+
+## CPU Coverage
 
 The current CPU opcode set has 236 implemented opcodes.
 
@@ -39,49 +99,20 @@ The current CPU opcode set has 236 implemented opcodes.
 | Cache / memory control | dcbf, dcbi, dcbst, dcbt, dcbtst, dcbz, dcbz_l, eieio, icbi, isync, sync, tlbie, tlbsync |
 | SPR / system moves | eciwx, ecowx, mfmsr, mfspr/mflr/mfctr/mfxer, mfsr, mfsrin, mftb/mftbu, mtmsr, mtspr/mtlr/mtctr/mtxer, mtsr, mtsrin |
 
-## building
 
-DolRecomp is C and builds with CMake. zlib is optional, but needed for compressed RPX sections. The CMake file will try devkitPro's MSYS2 zlib first when it is installed.
+## Repository Layout
 
-From the repo root:
+```text
+src/
+  frontend/     DOL/RPX loading and PowerPC decode
+  backend/      split C output
+  core/         CPU state and behavior helpers
 
-```
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-cmake --build build -j14
-```
-
-## usage
-
-For Wii title lookup, grab the local GameTDB/WiiTDB list once:
-
-```
-dolrecomp.exe --setup
+tests/          decoder, CPU behavior, RPX, and codegen tests
+docs/           project notes
+tools/          optional developer utilities
 ```
 
-Wii DOLs need the six-character title ID:
+## Legal Notes
 
-```
-dolrecomp.exe -j14 path\to\main.dol SUKE01 build
-```
-
-GameCube DOLs do not use a title ID:
-
-```
-dolrecomp.exe --gamecube path\to\main.dol build
-```
-
-Wii U uses the Espresso CPU profile and takes an RPX:
-
-```
-dolrecomp.exe --cpu espresso path\to\main.rpx build
-```
-
-todo: add more documentation here as it grows
-
-If the last argument is a directory, Wii output goes under `<title-id>_generated\`. GameCube and Wii U use `generated\`. If the last argument ends in `.c`, that exact C file is used. `-jN` controls how many worker jobs write split C chunks.
-
-If `database\titles.txt` is missing during Wii mode, DolRecomp warns and falls back to GameCube mode.
-
-## contributing
-
-todo
+DolRecomp is GPLv3. Copied code must be license compatible.

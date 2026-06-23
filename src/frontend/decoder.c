@@ -166,22 +166,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         case 96:  decode_fcmp(&inst, PPC_OP_PS_CMPO1, raw); break;
         case 136: decode_x_frt_frb(&inst, PPC_OP_PS_NABS, raw); break;
         case 264: decode_x_frt_frb(&inst, PPC_OP_PS_ABS, raw); break;
-        case 313: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MUL, raw); break;
-        case 362: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM0, raw); break;
-        case 491: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM1, raw); break;
-        case 509: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADD, raw); break;
         case 528: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE00, raw); break;
         case 560: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE01, raw); break;
         case 592: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE10, raw); break;
-        case 620: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS0, raw); break;
         case 624: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MERGE11, raw); break;
-        case 636: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MSUB, raw); break;
-        case 717: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS1, raw); break;
-        case 759: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SEL, raw); break;
-        case 767: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMADD, raw); break;
-        case 814: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS0, raw); break;
-        case 894: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMSUB, raw); break;
-        case 943: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS1, raw); break;
         case 1014:
             if (PPC_RD(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_DCBZ_L;
@@ -196,7 +184,24 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             case 7:  decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STX, raw); break;
             case 38: decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LUX, raw); break;
             case 39: decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STUX, raw); break;
-            default: inst.op = PPC_OP_UNKNOWN; break;
+            default: {
+                switch (PPC_A_XO(raw)) {
+                case 10: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM0, raw); break;
+                case 11: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM1, raw); break;
+                case 12: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS0, raw); break;
+                case 13: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MULS1, raw); break;
+                case 14: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS0, raw); break;
+                case 15: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADDS1, raw); break;
+                case 23: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SEL, raw); break;
+                case 25: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MUL, raw); break;
+                case 28: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MSUB, raw); break;
+                case 29: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_MADD, raw); break;
+                case 30: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMSUB, raw); break;
+                case 31: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_NMADD, raw); break;
+                default: inst.op = PPC_OP_UNKNOWN; break;
+                }
+                break;
+            }
             }
             break;
         }

@@ -20,6 +20,7 @@
 #include "core/types.h"
 #include "frontend/dol.h"
 #include "frontend/rpx.h"
+#include "frontend/disc_extract.h"
 #include "frontend/decoder.h"
 #include "backend/emitter.h"
 
@@ -28,12 +29,31 @@
 #define DATABASE_TITLES_FILE "titles.txt"
 #define DATABASE_SETUP_FLAG ".setup_done.flag"
 #define GAMETDB_TITLES_URL "https://www.gametdb.com/titles.txt?LANG=EN"
+#define EXTERN_DIR "extern"
+#define WIT_DIR "extern/wit"
+#define WIT_BIN_DIR "extern/wit/bin"
+
+#ifdef _WIN32
+#define WIT_DOWNLOAD_URL "https://wit.wiimm.de/download/wit-v3.05a-r8638-cygwin64.zip"
+#define WIT_ARCHIVE_NAME "wit-v3.05a-r8638-cygwin64.zip"
+#define WIT_EXE_NAME "wit.exe"
+#elif defined(__APPLE__)
+#define WIT_DOWNLOAD_URL "https://wit.wiimm.de/download/wit-v3.05a-r8638-mac.tar.gz"
+#define WIT_ARCHIVE_NAME "wit-v3.05a-r8638-mac.tar.gz"
+#define WIT_EXE_NAME "wit"
+#else
+#define WIT_DOWNLOAD_URL "https://wit.wiimm.de/download/wit-v3.05a-r8638-x86_64.tar.gz"
+#define WIT_ARCHIVE_NAME "wit-v3.05a-r8638-x86_64.tar.gz"
+#define WIT_EXE_NAME "wit"
+#endif
 
 static void print_usage(const char* argv0) {
     (void)argv0;
 
     fprintf(stderr, "usage: dolrecomp.exe [-jN] [--cpu gekko|broadway|espresso] [--gamecube] <input> [wii-title-id] [output.c | output-dir]\n");
     fprintf(stderr, "\n");
+    fprintf(stderr, "extract:  dolrecomp.exe extract game.iso output_folder\n");
+    fprintf(stderr, "extract:  dolrecomp.exe extract game.wbfs output_folder\n");
     fprintf(stderr, "wii:      dolrecomp.exe <input.dol> SUKE01 build\n");
     fprintf(stderr, "gamecube: dolrecomp.exe --gamecube <input.dol> build\n");
     fprintf(stderr, "wii u cpu: dolrecomp.exe --cpu espresso <input.rpx> build\n");
@@ -41,7 +61,7 @@ static void print_usage(const char* argv0) {
     fprintf(stderr, "with output-dir: writes output-dir/<wii-title-id>_generated/<wii-title-id>.c\n");
     fprintf(stderr, "with --gamecube or --cpu espresso output-dir: writes output-dir/generated/generated.c\n");
     fprintf(stderr, "-jN writes split C files with N jobs, like -j14\n");
-    fprintf(stderr, "--setup downloads database/titles.txt from GameTDB\n");
+    fprintf(stderr, "--setup downloads database/titles.txt and can install wit tools\n");
     fprintf(stderr, "without output: writes generated code under the current directory\n");
 }
 
@@ -376,6 +396,45 @@ static int file_exists(const char* path) {
     return 1;
 }
 
+static char* shell_quote_arg(const char* arg) {
+    size_t len = strlen(arg);
+    size_t cap = len * 4 + 3;
+    char* out = (char*)malloc(cap);
+    if (!out)
+        return NULL;
+
+#ifdef _WIN32
+    size_t w = 0;
+    out[w++] = '"';
+    for (size_t i = 0; i < len; i++) {
+        if (arg[i] == '"')
+            out[w++] = '\\';
+        out[w++] = arg[i];
+    }
+    out[w++] = '"';
+    out[w] = '\0';
+#else
+    size_t w = 0;
+    out[w++] = '\'';
+    for (size_t i = 0; i < len; i++) {
+        if (arg[i] == '\'') {
+            memcpy(out + w, "'\\''", 4);
+            w += 4;
+        } else {
+            out[w++] = arg[i];
+        }
+    }
+    out[w++] = '\'';
+    out[w] = '\0';
+#endif
+
+    return out;
+}
+
+static int run_shell_command(const char* command) {
+    return system(command) == 0;
+}
+
 static int database_titles_path(char* out, size_t out_size) {
     return database_path(out, out_size, DATABASE_TITLES_FILE);
 }
@@ -391,6 +450,10 @@ static void print_database_missing_notice(void) {
 }
 
 static int write_setup_flag(const char* path) {
+#ifdef _WIN32
+    SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+#endif
+
     FILE* file = fopen(path, "w");
     if (!file) {
         fprintf(stderr, "error: can't write setup flag '%s'\n", path);
@@ -489,6 +552,274 @@ static int download_titles_database(const char* output_path) {
     return 1;
 }
 
+static int local_wit_path(char* out, size_t out_size) {
+    char path[1024];
+
+    if (join_path(path, sizeof(path), WIT_BIN_DIR, WIT_EXE_NAME) &&
+        file_exists(path)) {
+        return snprintf(out, out_size, "%s", path) > 0 &&
+               strlen(out) < out_size;
+    }
+
+    if (join_path(path, sizeof(path), WIT_DIR, WIT_EXE_NAME) &&
+        file_exists(path)) {
+        return snprintf(out, out_size, "%s", path) > 0 &&
+               strlen(out) < out_size;
+    }
+
+    return 0;
+}
+
+static int command_exists_quiet(const char* command_name) {
+    char* quoted = shell_quote_arg(command_name);
+    if (!quoted)
+        return 0;
+
+    char command[1200];
+#ifdef _WIN32
+    int written = snprintf(command, sizeof(command), "%s --version >NUL 2>NUL",
+                           quoted);
+#else
+    int written = snprintf(command, sizeof(command), "%s --version >/dev/null 2>/dev/null",
+                           quoted);
+#endif
+    free(quoted);
+    return written > 0 && (size_t)written < sizeof(command) &&
+           run_shell_command(command);
+}
+
+static int wit_tools_available(void) {
+    char path[1024];
+    if (local_wit_path(path, sizeof(path)))
+        return 1;
+    return command_exists_quiet("wit");
+}
+
+static int prompt_yes_no(const char* prompt) {
+    char line[32];
+    printf("%s", prompt);
+    fflush(stdout);
+
+    if (!fgets(line, sizeof(line), stdin))
+        return 0;
+    return line[0] == 'y' || line[0] == 'Y';
+}
+
+static int download_file(const char* url, const char* output_path) {
+    char temp_path[1200];
+    if (snprintf(temp_path, sizeof(temp_path), "%s.tmp", output_path) >=
+        (int)sizeof(temp_path)) {
+        fprintf(stderr, "error: download path is too long\n");
+        return 0;
+    }
+
+    char* qurl = shell_quote_arg(url);
+    char* qout = shell_quote_arg(temp_path);
+    if (!qurl || !qout) {
+        free(qurl);
+        free(qout);
+        fprintf(stderr, "error: out of memory\n");
+        return 0;
+    }
+
+    char command[2600];
+#ifdef _WIN32
+    int written = snprintf(command, sizeof(command),
+                           "curl.exe -fL --max-time 300 -o %s %s",
+                           qout, qurl);
+#else
+    int written = snprintf(command, sizeof(command),
+                           "curl -fL --max-time 300 -o %s %s",
+                           qout, qurl);
+#endif
+    free(qurl);
+    free(qout);
+
+    if (written <= 0 || (size_t)written >= sizeof(command)) {
+        fprintf(stderr, "error: download command is too long\n");
+        return 0;
+    }
+
+    remove(temp_path);
+    if (!run_shell_command(command)) {
+        remove(temp_path);
+        fprintf(stderr, "error: download failed\n");
+        return 0;
+    }
+
+    remove(output_path);
+    if (rename(temp_path, output_path) != 0) {
+        remove(temp_path);
+        fprintf(stderr, "error: can't install '%s'\n", output_path);
+        return 0;
+    }
+
+    return 1;
+}
+
+#ifdef _WIN32
+static void write_ps_quoted(FILE* file, const char* text) {
+    fputc('\'', file);
+    for (size_t i = 0; text[i] != '\0'; i++) {
+        if (text[i] == '\'')
+            fputs("''", file);
+        else
+            fputc(text[i], file);
+    }
+    fputc('\'', file);
+}
+
+static int write_wit_install_script(const char* script_path,
+                                    const char* archive_path) {
+    FILE* file = fopen(script_path, "w");
+    if (!file) {
+        fprintf(stderr, "error: can't write '%s'\n", script_path);
+        return 0;
+    }
+
+    fprintf(file, "$ErrorActionPreference = 'Stop'\n");
+    fprintf(file, "$archive = ");
+    write_ps_quoted(file, archive_path);
+    fprintf(file, "\n$root = ");
+    write_ps_quoted(file, WIT_DIR);
+    fprintf(file, "\n$unpack = Join-Path $root 'unpack'\n");
+    fprintf(file, "$bin = ");
+    write_ps_quoted(file, WIT_BIN_DIR);
+    fprintf(file, "\nRemove-Item -LiteralPath $unpack -Recurse -Force -ErrorAction SilentlyContinue\n");
+    fprintf(file, "Remove-Item -LiteralPath $bin -Recurse -Force -ErrorAction SilentlyContinue\n");
+    fprintf(file, "New-Item -ItemType Directory -Force -Path $unpack | Out-Null\n");
+    fprintf(file, "New-Item -ItemType Directory -Force -Path $bin | Out-Null\n");
+    fprintf(file, "Expand-Archive -LiteralPath $archive -DestinationPath $unpack -Force\n");
+    fprintf(file, "$wit = Get-ChildItem -LiteralPath $unpack -Recurse -Filter 'wit.exe' | Select-Object -First 1\n");
+    fprintf(file, "if (-not $wit) { exit 2 }\n");
+    fprintf(file, "Copy-Item -Path (Join-Path $wit.Directory.FullName '*') -Destination $bin -Recurse -Force\n");
+    fprintf(file, "Remove-Item -LiteralPath $unpack -Recurse -Force -ErrorAction SilentlyContinue\n");
+
+    if (fclose(file) != 0) {
+        fprintf(stderr, "error: failed writing '%s'\n", script_path);
+        return 0;
+    }
+    return 1;
+}
+
+static int extract_wit_archive(const char* archive_path) {
+    char script_path[1200];
+    if (join_path(script_path, sizeof(script_path), WIT_DIR, "install_wit.ps1") == 0) {
+        fprintf(stderr, "error: setup path is too long\n");
+        return 0;
+    }
+
+    if (!write_wit_install_script(script_path, archive_path))
+        return 0;
+
+    char* qscript = shell_quote_arg(script_path);
+    if (!qscript) {
+        fprintf(stderr, "error: out of memory\n");
+        return 0;
+    }
+
+    char command[1800];
+    int written = snprintf(command, sizeof(command),
+                           "powershell.exe -NoProfile -ExecutionPolicy Bypass -File %s",
+                           qscript);
+    free(qscript);
+
+    if (written <= 0 || (size_t)written >= sizeof(command)) {
+        fprintf(stderr, "error: extract command is too long\n");
+        return 0;
+    }
+
+    if (!run_shell_command(command)) {
+        fprintf(stderr, "error: failed extracting wit tools\n");
+        return 0;
+    }
+
+    remove(script_path);
+    return 1;
+}
+#else
+static int extract_wit_archive(const char* archive_path) {
+    char* qarchive = shell_quote_arg(archive_path);
+    char* qroot = shell_quote_arg(WIT_DIR);
+    char* qbin = shell_quote_arg(WIT_BIN_DIR);
+    if (!qarchive || !qroot || !qbin) {
+        free(qarchive);
+        free(qroot);
+        free(qbin);
+        fprintf(stderr, "error: out of memory\n");
+        return 0;
+    }
+
+    char command[3000];
+    int written = snprintf(command, sizeof(command),
+        "rm -rf %s/unpack %s && mkdir -p %s/unpack %s && "
+        "tar -xzf %s -C %s/unpack && "
+        "found=$(find %s/unpack -type f -name wit | head -n 1) && "
+        "test -n \"$found\" && cp -R \"$(dirname \"$found\")\"/. %s && "
+        "chmod +x %s/wit && rm -rf %s/unpack",
+        qroot, qbin, qroot, qbin, qarchive, qroot, qroot, qbin, qbin, qroot);
+
+    free(qarchive);
+    free(qroot);
+    free(qbin);
+
+    if (written <= 0 || (size_t)written >= sizeof(command)) {
+        fprintf(stderr, "error: extract command is too long\n");
+        return 0;
+    }
+
+    if (!run_shell_command(command)) {
+        fprintf(stderr, "error: failed extracting wit tools\n");
+        return 0;
+    }
+    return 1;
+}
+#endif
+
+static int install_wit_tools(void) {
+    char archive_path[1200];
+
+    if (!make_dir_tree(EXTERN_DIR) || !make_dir_tree(WIT_DIR))
+        return 0;
+
+    if (!join_path(archive_path, sizeof(archive_path), WIT_DIR,
+                   WIT_ARCHIVE_NAME)) {
+        fprintf(stderr, "error: wit path is too long\n");
+        return 0;
+    }
+
+    printf("downloading Wiimms ISO Tools...\n");
+    if (!download_file(WIT_DOWNLOAD_URL, archive_path))
+        return 0;
+
+    printf("installing Wiimms ISO Tools...\n");
+    if (!extract_wit_archive(archive_path))
+        return 0;
+
+    char wit_path[1024];
+    if (!local_wit_path(wit_path, sizeof(wit_path))) {
+        fprintf(stderr, "error: wit install did not produce %s\n", WIT_EXE_NAME);
+        return 0;
+    }
+
+    printf("  wit:    %s\n", wit_path);
+    return 1;
+}
+
+static int setup_wit_tools(void) {
+    if (wit_tools_available()) {
+        printf("wit tools found.\n");
+        return 1;
+    }
+
+    if (!prompt_yes_no("wit tools missing, download? [Y/N] ")) {
+        printf("skipping wit tools.\n");
+        return 1;
+    }
+
+    return install_wit_tools();
+}
+
 static int run_setup(void) {
     char titles_path[1024];
     char flag_path[1024];
@@ -507,6 +838,9 @@ static int run_setup(void) {
         return 0;
 
     if (!write_setup_flag(flag_path))
+        return 0;
+
+    if (!setup_wit_tools())
         return 0;
 
     printf("done!\n");
@@ -609,7 +943,12 @@ typedef struct {
     u32 file_offset;
     u32 address;
     u32 size;
+    int allow_embedded_data;
 } LoadedCodeSection;
+
+static int rpx_embedded_data_word(u32 raw) {
+    return raw == 0x00400000u || raw == 0x00600000u;
+}
 
 typedef struct {
     const char* input_path;
@@ -1070,17 +1409,31 @@ static int emit_code_sections_split(const LoadedCodeSection* sections,
             return 0;
         }
 
-        u32 decoded = 0, unknown = 0;
+        u32 decoded = 0, embedded = 0, unknown = 0;
         for (u32 i = 0; i < num_insts; i++) {
             u32 raw = read_be32(section_data + i * 4);
             u32 addr = base_addr + i * 4;
             insts[i] = ppc_decode(raw, addr);
+            if (insts[i].op == PPC_OP_UNKNOWN &&
+                section->allow_embedded_data &&
+                rpx_embedded_data_word(raw)) {
+                insts[i].embedded_data = true;
+            }
             decoded++;
-            if (insts[i].op == PPC_OP_UNKNOWN) unknown++;
+            if (insts[i].embedded_data) {
+                embedded++;
+            } else if (insts[i].op == PPC_OP_UNKNOWN) {
+                unknown++;
+            }
         }
 
-        printf("  %u decoded, %u known, %u unknown\n",
-               decoded, decoded - unknown, unknown);
+        if (embedded != 0) {
+            printf("  %u decoded, %u known, %u embedded data, %u unknown\n",
+                   decoded, decoded - embedded - unknown, embedded, unknown);
+        } else {
+            printf("  %u decoded, %u known, %u unknown\n",
+                   decoded, decoded - unknown, unknown);
+        }
 
         u32 section_job_count =
             (num_insts + EMIT_CHUNK_INSTRUCTIONS - 1u) / EMIT_CHUNK_INSTRUCTIONS;
@@ -1191,6 +1544,7 @@ static int emit_dol_split(const DOLFile* dol, const char* output_path,
         section->file_offset = dol->header.text_offsets[i];
         section->address = dol->header.text_addresses[i];
         section->size = dol->header.text_sizes[i];
+        section->allow_embedded_data = 0;
     }
 
     return emit_code_sections_split(sections, section_count, output_path, cpu,
@@ -1211,6 +1565,7 @@ static int emit_rpx_split(const RPXFile* rpx, const char* output_path,
         section->file_offset = code->offset;
         section->address = code->address;
         section->size = code->size;
+        section->allow_embedded_data = 1;
     }
 
     return emit_code_sections_split(sections, rpx->code_section_count,
@@ -1218,6 +1573,9 @@ static int emit_rpx_split(const RPXFile* rpx, const char* output_path,
 }
 
 int main(int argc, char** argv) {
+    if (argc > 1 && strcmp(argv[1], "extract") == 0)
+        return disc_extract_main(argc - 1, argv + 1);
+
     CliOptions opts;
     if (!parse_cli(argc, argv, &opts))
         return 1;

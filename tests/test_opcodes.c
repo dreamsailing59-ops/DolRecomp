@@ -380,6 +380,48 @@ static int test_pseudoops_and_display(void) {
     return 1;
 }
 
+static int test_paired_single_a_form_variants(void) {
+    typedef struct {
+        u32 raw;
+        PPCOpcode op;
+        u8 rD;
+        u8 rA;
+        u8 rB;
+        u8 rC;
+        const char* name;
+    } Case;
+
+    static const Case cases[] = {
+        { 0x116A5294, PPC_OP_PS_SUM0,   11, 10, 10, 10, "ps_sum0" },
+        { 0x116D6AD6, PPC_OP_PS_SUM1,   11, 13, 13, 11, "ps_sum1" },
+        { 0x11240358, PPC_OP_PS_MULS0,   9,  4,  0, 13, "ps_muls0" },
+        { 0x1100075A, PPC_OP_PS_MULS1,   8,  0,  0, 29, "ps_muls1" },
+        { 0x11A3531C, PPC_OP_PS_MADDS0, 13,  3, 10, 12, "ps_madds0" },
+        { 0x11654B5E, PPC_OP_PS_MADDS1, 11,  5,  9, 13, "ps_madds1" },
+        { 0x118D5AAE, PPC_OP_PS_SEL,    12, 13, 11, 10, "ps_sel" },
+        { 0x110B0372, PPC_OP_PS_MUL,     8, 11,  0, 13, "ps_mul" },
+        { 0x11446A78, PPC_OP_PS_MSUB,   10,  4, 13,  9, "ps_msub" },
+        { 0x110C403A, PPC_OP_PS_MADD,    8, 12,  8,  0, "ps_madd" },
+        { 0x1107327C, PPC_OP_PS_NMSUB,   8,  7,  6,  9, "ps_nmsub" },
+        { 0x11A56A7E, PPC_OP_PS_NMADD,  13,  5, 13,  9, "ps_nmadd" },
+    };
+
+    printf("  paired-single A-form variants from RPX code\n");
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const Case* c = &cases[i];
+        PPCInst inst = ppc_decode(c->raw, BASE + (u32)i * 4);
+        CHECK(inst.op == c->op, "%s raw 0x%08X decoded as %s",
+              c->name, c->raw, ppc_op_name(inst.op));
+        CHECK(inst.rD == c->rD, "%s rD got %u", c->name, inst.rD);
+        CHECK(inst.rA == c->rA, "%s rA got %u", c->name, inst.rA);
+        CHECK(inst.rB == c->rB, "%s rB got %u", c->name, inst.rB);
+        CHECK(inst.rC == c->rC, "%s rC got %u", c->name, inst.rC);
+    }
+
+    return 1;
+}
+
 static int test_field_edges(void) {
     printf("  field extraction edge cases\n");
 
@@ -482,6 +524,10 @@ static int test_unknown_opcode(void) {
     CHECK(inst.op == PPC_OP_UNKNOWN, "unrecognized opcode should be UNKNOWN");
     CHECK(inst.raw == raw, "raw should be preserved");
     CHECK(inst.address == BASE, "address should be preserved");
+
+    inst = ppc_decode(0x00400000u, BASE);
+    CHECK(inst.op == PPC_OP_UNKNOWN, "primary opcode 0 data word should stay UNKNOWN");
+    CHECK(!inst.embedded_data, "plain decode should not mark embedded data");
     return 1;
 }
 
@@ -524,6 +570,7 @@ static TestCase all_tests[] = {
     { "current opcode count", test_current_opcode_count },
     { "current opcode decode", test_current_opcode_decode_table },
     { "pseudo-ops and display", test_pseudoops_and_display },
+    { "paired-single A-form variants", test_paired_single_a_form_variants },
     { "field edges", test_field_edges },
     { "branch edges", test_branch_edges },
     { "unknown opcode", test_unknown_opcode },

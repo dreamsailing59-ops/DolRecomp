@@ -11,8 +11,7 @@ typedef enum {
     DOLRECOMP_CPU_ESPRESSO,
 } DolRecompCPU;
 
-// well it's kinda in the name.
-// similar approach to N64Recomp's emitter
+// Split C emitter used by the command-line recompiler.
 
 // emit the boilerplate header (includes, typedefs, etc)
 void emit_header(FILE* out);

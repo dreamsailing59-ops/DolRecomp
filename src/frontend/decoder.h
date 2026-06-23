@@ -251,6 +251,7 @@ typedef struct {
     PPCOpcode op;
     u32 raw;
     u32 address;
+    bool embedded_data;
 
     u8  rD;
     u8  rA;
