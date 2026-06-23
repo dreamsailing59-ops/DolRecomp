@@ -34,6 +34,9 @@ enum {
     F_NB     = 1u << 23,
     F_FM     = 1u << 24,
     F_IMM    = 1u << 25,
+    F_TO     = 1u << 26,
+    F_SR     = 1u << 27,
+    F_OE     = 1u << 28,
 };
 
 typedef struct {
@@ -55,6 +58,8 @@ typedef struct {
     u8 nb;
     u8 fm;
     u8 imm;
+    u8 to;
+    u8 sr;
     u8 bo;
     u8 bi;
     u8 mb;
@@ -66,6 +71,7 @@ typedef struct {
     bool aa;
     bool lk;
     bool rc;
+    bool oe;
     u16 spr;
 } DecodeCase;
 
@@ -280,6 +286,36 @@ static const DecodeCase cases[] = {
     { "sync", 0x7C0004AC, PPC_OP_SYNC, 0 },
     { "eieio", 0x7C0006AC, PPC_OP_EIEIO, 0 },
     { "isync", 0x4C00012C, PPC_OP_ISYNC, 0 },
+    { "addo", 0x7D4B6614, PPC_OP_ADDO, F_RD|F_RA|F_RB|F_OE, .rD=10, .rA=11, .rB=12, .oe=true },
+    { "addco", 0x7D6C6C14, PPC_OP_ADDCO, F_RD|F_RA|F_RB|F_OE, .rD=11, .rA=12, .rB=13, .oe=true },
+    { "addeo", 0x7D8D7514, PPC_OP_ADDEO, F_RD|F_RA|F_RB|F_OE, .rD=12, .rA=13, .rB=14, .oe=true },
+    { "addmeo", 0x7DAE05D4, PPC_OP_ADDMEO, F_RD|F_RA|F_OE, .rD=13, .rA=14, .oe=true },
+    { "addzeo", 0x7DCF0594, PPC_OP_ADDZEO, F_RD|F_RA|F_OE, .rD=14, .rA=15, .oe=true },
+    { "subfo", 0x7DF08C50, PPC_OP_SUBFO, F_RD|F_RA|F_RB|F_OE, .rD=15, .rA=16, .rB=17, .oe=true },
+    { "subfco", 0x7E119410, PPC_OP_SUBFCO, F_RD|F_RA|F_RB|F_OE, .rD=16, .rA=17, .rB=18, .oe=true },
+    { "subfeo", 0x7E329D10, PPC_OP_SUBFEO, F_RD|F_RA|F_RB|F_OE, .rD=17, .rA=18, .rB=19, .oe=true },
+    { "subfmeo", 0x7E5305D0, PPC_OP_SUBFMEO, F_RD|F_RA|F_OE, .rD=18, .rA=19, .oe=true },
+    { "subfzeo", 0x7E740590, PPC_OP_SUBFZEO, F_RD|F_RA|F_OE, .rD=19, .rA=20, .oe=true },
+    { "nego", 0x7E9504D0, PPC_OP_NEGO, F_RD|F_RA|F_OE, .rD=20, .rA=21, .oe=true },
+    { "mullwo", 0x7EB6BDD6, PPC_OP_MULLWO, F_RD|F_RA|F_RB|F_OE, .rD=21, .rA=22, .rB=23, .oe=true },
+    { "divwo", 0x7ED7C7D6, PPC_OP_DIVWO, F_RD|F_RA|F_RB|F_OE, .rD=22, .rA=23, .rB=24, .oe=true },
+    { "divwuo", 0x7EF8CF96, PPC_OP_DIVWUO, F_RD|F_RA|F_RB|F_OE, .rD=23, .rA=24, .rB=25, .oe=true },
+    { "twi", 0x0C85FFFE, PPC_OP_TWI, F_TO|F_RA|F_SIMM, .to=4, .rA=5, .simm=-2 },
+    { "tw", 0x7CC74008, PPC_OP_TW, F_TO|F_RA|F_RB, .to=6, .rA=7, .rB=8 },
+    { "mcrxr", 0x7D000400, PPC_OP_MCRXR, F_CRF, .crfD=2 },
+    { "mfmsr", 0x7D2000A6, PPC_OP_MFMSR, F_RD, .rD=9 },
+    { "mtmsr", 0x7D400124, PPC_OP_MTMSR, F_RS, .rS=10 },
+    { "mfsr", 0x7D6304A6, PPC_OP_MFSR, F_RD|F_SR, .rD=11, .sr=3 },
+    { "mfsrin", 0x7D806D26, PPC_OP_MFSRIN, F_RD|F_RB, .rD=12, .rB=13 },
+    { "mtsr", 0x7DC401A4, PPC_OP_MTSR, F_RS|F_SR, .rS=14, .sr=4 },
+    { "mtsrin", 0x7DE081E4, PPC_OP_MTSRIN, F_RS|F_RB, .rS=15, .rB=16 },
+    { "dcbst", 0x7C11906C, PPC_OP_DCBST, F_RA|F_RB, .rA=17, .rB=18 },
+    { "dcbf", 0x7C13A0AC, PPC_OP_DCBF, F_RA|F_RB, .rA=19, .rB=20 },
+    { "dcbtst", 0x7C15B1EC, PPC_OP_DCBTST, F_RA|F_RB, .rA=21, .rB=22 },
+    { "dcbt", 0x7C17C22C, PPC_OP_DCBT, F_RA|F_RB, .rA=23, .rB=24 },
+    { "dcbi", 0x7C19D3AC, PPC_OP_DCBI, F_RA|F_RB, .rA=25, .rB=26 },
+    { "icbi", 0x7C1BE7AC, PPC_OP_ICBI, F_RA|F_RB, .rA=27, .rB=28 },
+    { "tlbsync", 0x7C00046C, PPC_OP_TLBSYNC, 0 },
 };
 
 static int pass = 0;
@@ -309,7 +345,7 @@ int main(void) {
     int num_cases = (int)(sizeof(cases) / sizeof(cases[0]));
     printf("cross-check: %d opcodes against devkitPPC ground truth\n\n", num_cases);
 
-    check((PPC_OP_COUNT - 1) == 199, -1, "opcode count", PPC_OP_COUNT - 1, 199);
+    check((PPC_OP_COUNT - 1) == 229, -1, "opcode count", PPC_OP_COUNT - 1, 229);
 
     for (int n = 0; n < num_cases; n++) {
         const DecodeCase* c = &cases[n];
@@ -335,6 +371,8 @@ int main(void) {
         if (c->fields & F_NB)     check(inst.nb == c->nb, n, "nb", inst.nb, c->nb);
         if (c->fields & F_FM)     check(inst.fm == c->fm, n, "fm", inst.fm, c->fm);
         if (c->fields & F_IMM)    check(inst.imm == c->imm, n, "imm", inst.imm, c->imm);
+        if (c->fields & F_TO)     check(inst.to == c->to, n, "to", inst.to, c->to);
+        if (c->fields & F_SR)     check(inst.sr == c->sr, n, "sr", inst.sr, c->sr);
         if (c->fields & F_BO)     check(inst.bo == c->bo, n, "bo", inst.bo, c->bo);
         if (c->fields & F_BI)     check(inst.bi == c->bi, n, "bi", inst.bi, c->bi);
         if (c->fields & F_MB)     check(inst.mb == c->mb, n, "mb", inst.mb, c->mb);
@@ -346,6 +384,7 @@ int main(void) {
         if (c->fields & F_AA)     check(inst.aa == c->aa, n, "aa", inst.aa, c->aa);
         if (c->fields & F_LK)     check(inst.lk == c->lk, n, "lk", inst.lk, c->lk);
         if (c->fields & F_RC)     check(inst.rc == c->rc, n, "rc", inst.rc, c->rc);
+        if (c->fields & F_OE)     check(inst.oe == c->oe, n, "oe", inst.oe, c->oe);
         if (c->fields & F_SPR)    check(inst.spr == c->spr, n, "spr", inst.spr, c->spr);
     }
 

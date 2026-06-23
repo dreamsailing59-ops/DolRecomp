@@ -192,6 +192,36 @@ mtfsf 0x5a, f14
 sync
 eieio
 isync
+addo r10, r11, r12
+addco r11, r12, r13
+addeo r12, r13, r14
+addmeo r13, r14
+addzeo r14, r15
+subfo r15, r16, r17
+subfco r16, r17, r18
+subfeo r17, r18, r19
+subfmeo r18, r19
+subfzeo r19, r20
+nego r20, r21
+mullwo r21, r22, r23
+divwo r22, r23, r24
+divwuo r23, r24, r25
+twi 4, r5, -2
+tw 6, r7, r8
+mcrxr cr2
+mfmsr r9
+mtmsr r10
+mfsr r11, 3
+mfsrin r12, r13
+mtsr 4, r14
+mtsrin r15, r16
+dcbst r17, r18
+dcbf r19, r20
+dcbtst r21, r22
+dcbt r23, r24
+dcbi r25, r26
+icbi r27, r28
+tlbsync
 
 branch_target:
 nop

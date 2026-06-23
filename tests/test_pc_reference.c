@@ -345,6 +345,13 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         compare_u32_values(cpu, inst->crfD, cpu->gpr[inst->rA], cpu->gpr[inst->rB]);
         break;
 
+    case PPC_OP_TWI:
+        if (ppc_trap_condition(inst->to, cpu->gpr[inst->rA], (u32)(s32)inst->simm)) {
+            cpu->exception |= PPC_EXC_PROGRAM;
+            cpu->program_exception |= PPC_PROGRAM_TRAP;
+        }
+        break;
+
     case PPC_OP_ORI:
         cpu->gpr[inst->rA] = cpu->gpr[inst->rS] | inst->uimm;
         break;
@@ -372,105 +379,147 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
 
     case PPC_OP_ADD:
-        cpu->gpr[inst->rD] = cpu->gpr[inst->rA] + cpu->gpr[inst->rB];
-        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
-        break;
-
-    case PPC_OP_ADDC: {
-        u64 res = (u64)cpu->gpr[inst->rA] + (u64)cpu->gpr[inst->rB];
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
-        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
-        break;
-    }
-
-    case PPC_OP_ADDE: {
-        u64 res = (u64)cpu->gpr[inst->rA] + (u64)cpu->gpr[inst->rB] +
-                  ((cpu->xer & XER_CA) ? 1u : 0u);
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
+    case PPC_OP_ADDO: {
+        u32 a = cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u32 res = a + b;
+        cpu->gpr[inst->rD] = res;
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
-    case PPC_OP_ADDME: {
+    case PPC_OP_ADDC:
+    case PPC_OP_ADDCO: {
+        u32 a = cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u64 wide = (u64)a + (u64)b;
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
+    case PPC_OP_ADDE:
+    case PPC_OP_ADDEO: {
+        u32 carry = (cpu->xer & XER_CA) ? 1u : 0u;
+        u32 a = cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u64 wide = (u64)a + (u64)b + carry;
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
+    case PPC_OP_ADDME:
+    case PPC_OP_ADDMEO: {
         u32 input = cpu->gpr[inst->rA];
         bool carry = (cpu->xer & XER_CA) != 0;
         u64 res = (u64)input + 0xFFFFFFFFull + (carry ? 1u : 0u);
         cpu->gpr[inst->rD] = (u32)res;
         set_ca_from_u64(cpu, res);
-        if (inst->oe) {
-            bool ov = !carry && input == 0x80000000u;
-            cpu->xer = (cpu->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);
-            if (ov) cpu->xer |= XER_SO;
-        }
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(input, 0xFFFFFFFFu, (u32)res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
-    case PPC_OP_ADDZE: {
-        u64 res = (u64)cpu->gpr[inst->rA] + ((cpu->xer & XER_CA) ? 1u : 0u);
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
+    case PPC_OP_ADDZE:
+    case PPC_OP_ADDZEO: {
+        u32 a = cpu->gpr[inst->rA];
+        u64 wide = (u64)a + ((cpu->xer & XER_CA) ? 1u : 0u);
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, 0u, res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
     case PPC_OP_SUBF:
-        cpu->gpr[inst->rD] = cpu->gpr[inst->rB] - cpu->gpr[inst->rA];
-        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
-        break;
-
-    case PPC_OP_SUBFC: {
-        u64 res = (u64)cpu->gpr[inst->rB] + (u64)(~cpu->gpr[inst->rA]) + 1u;
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
-        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
-        break;
-    }
-
-    case PPC_OP_SUBFE: {
-        u64 res = (u64)cpu->gpr[inst->rB] + (u64)(~cpu->gpr[inst->rA]) +
-                  ((cpu->xer & XER_CA) ? 1u : 0u);
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
+    case PPC_OP_SUBFO: {
+        u32 a = ~cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u32 res = a + b + 1u;
+        cpu->gpr[inst->rD] = res;
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
-    case PPC_OP_SUBFME: {
-        u32 input = cpu->gpr[inst->rA];
+    case PPC_OP_SUBFC:
+    case PPC_OP_SUBFCO: {
+        u32 a = ~cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u64 wide = (u64)b + (u64)a + 1u;
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
+    case PPC_OP_SUBFE:
+    case PPC_OP_SUBFEO: {
+        u32 a = ~cpu->gpr[inst->rA];
+        u32 b = cpu->gpr[inst->rB];
+        u32 carry = (cpu->xer & XER_CA) ? 1u : 0u;
+        u64 wide = (u64)a + (u64)b + carry;
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, b, res));
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
+    case PPC_OP_SUBFME:
+    case PPC_OP_SUBFMEO: {
+        u32 input = ~cpu->gpr[inst->rA];
         bool carry = (cpu->xer & XER_CA) != 0;
-        u64 res = (u64)(~input) + 0xFFFFFFFFull + (carry ? 1u : 0u);
+        u64 res = (u64)input + 0xFFFFFFFFull + (carry ? 1u : 0u);
         cpu->gpr[inst->rD] = (u32)res;
         set_ca_from_u64(cpu, res);
-        if (inst->oe) {
-            bool ov = !carry && input == 0x7FFFFFFFu;
-            cpu->xer = (cpu->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);
-            if (ov) cpu->xer |= XER_SO;
-        }
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(input, 0xFFFFFFFFu, (u32)res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
-    case PPC_OP_SUBFZE: {
-        u64 res = (u64)(~cpu->gpr[inst->rA]) + ((cpu->xer & XER_CA) ? 1u : 0u);
-        cpu->gpr[inst->rD] = (u32)res;
-        set_ca_from_u64(cpu, res);
+    case PPC_OP_SUBFZE:
+    case PPC_OP_SUBFZEO: {
+        u32 a = ~cpu->gpr[inst->rA];
+        u64 wide = (u64)a + ((cpu->xer & XER_CA) ? 1u : 0u);
+        u32 res = (u32)wide;
+        cpu->gpr[inst->rD] = res;
+        set_ca_from_u64(cpu, wide);
+        if (inst->oe) ppc_set_xer_ov(cpu, ppc_add_overflowed(a, 0u, res));
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
     case PPC_OP_NEG:
-        cpu->gpr[inst->rD] = 0u - cpu->gpr[inst->rA];
+    case PPC_OP_NEGO: {
+        u32 a = cpu->gpr[inst->rA];
+        cpu->gpr[inst->rD] = (~a) + 1u;
+        if (inst->oe) ppc_set_xer_ov(cpu, a == 0x80000000u);
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
+    }
 
     case PPC_OP_MULLW:
-        cpu->gpr[inst->rD] = (u32)((s64)(s32)cpu->gpr[inst->rA] *
-                                    (s64)(s32)cpu->gpr[inst->rB]);
+    case PPC_OP_MULLWO: {
+        s64 product = (s64)(s32)cpu->gpr[inst->rA] *
+                      (s64)(s32)cpu->gpr[inst->rB];
+        cpu->gpr[inst->rD] = (u32)product;
+        if (inst->oe) ppc_set_xer_ov(cpu, product < -0x80000000ll || product > 0x7fffffffll);
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
+    }
 
     case PPC_OP_MULHW: {
         s64 product = (s64)(s32)cpu->gpr[inst->rA] *
@@ -487,20 +536,25 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
-    case PPC_OP_DIVW: {
+    case PPC_OP_DIVW:
+    case PPC_OP_DIVWO: {
         s32 dividend = (s32)cpu->gpr[inst->rA];
         s32 divisor = (s32)cpu->gpr[inst->rB];
-        cpu->gpr[inst->rD] = (divisor == 0 || (dividend == (s32)0x80000000 && divisor == -1))
-            ? 0u
+        bool overflow = divisor == 0 || ((u32)dividend == 0x80000000u && divisor == -1);
+        cpu->gpr[inst->rD] = overflow
+            ? ((dividend < 0) ? 0xFFFFFFFFu : 0u)
             : (u32)(dividend / divisor);
+        if (inst->oe) ppc_set_xer_ov(cpu, overflow);
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
 
     case PPC_OP_DIVWU:
+    case PPC_OP_DIVWUO:
         cpu->gpr[inst->rD] = cpu->gpr[inst->rB] == 0
             ? 0u
             : cpu->gpr[inst->rA] / cpu->gpr[inst->rB];
+        if (inst->oe) ppc_set_xer_ov(cpu, cpu->gpr[inst->rB] == 0);
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
 
@@ -1266,9 +1320,18 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_DCBST:
+    case PPC_OP_DCBF:
+    case PPC_OP_DCBTST:
+    case PPC_OP_DCBT:
+    case PPC_OP_DCBI:
+    case PPC_OP_ICBI:
+        break;
+
     case PPC_OP_SYNC:
     case PPC_OP_EIEIO:
     case PPC_OP_ISYNC:
+    case PPC_OP_TLBSYNC:
         break;
 
     case PPC_OP_B:
@@ -1300,6 +1363,13 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
             if (inst->lk)
                 cpu->lr = inst->address + 4;
             cpu->pc = target;
+        }
+        break;
+
+    case PPC_OP_TW:
+        if (ppc_trap_condition(inst->to, cpu->gpr[inst->rA], cpu->gpr[inst->rB])) {
+            cpu->exception |= PPC_EXC_PROGRAM;
+            cpu->program_exception |= PPC_PROGRAM_TRAP;
         }
         break;
 
@@ -1339,6 +1409,11 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         set_cr_field(cpu, inst->crfD, get_cr_field(cpu, inst->crfS));
         break;
 
+    case PPC_OP_MCRXR:
+        set_cr_field(cpu, inst->crfD, cpu->xer >> 28);
+        cpu->xer &= ~0xE0000000u;
+        break;
+
     case PPC_OP_MFCR:
         cpu->gpr[inst->rD] = cpu->cr;
         break;
@@ -1348,6 +1423,30 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         cpu->cr = (cpu->cr & ~mask) | (cpu->gpr[inst->rS] & mask);
         break;
     }
+
+    case PPC_OP_MFMSR:
+        cpu->gpr[inst->rD] = cpu->msr;
+        break;
+
+    case PPC_OP_MTMSR:
+        cpu->msr = cpu->gpr[inst->rS];
+        break;
+
+    case PPC_OP_MFSR:
+        cpu->gpr[inst->rD] = cpu->sr[inst->sr];
+        break;
+
+    case PPC_OP_MFSRIN:
+        cpu->gpr[inst->rD] = cpu->sr[(cpu->gpr[inst->rB] >> 28) & 0xFu];
+        break;
+
+    case PPC_OP_MTSR:
+        cpu->sr[inst->sr] = cpu->gpr[inst->rS];
+        break;
+
+    case PPC_OP_MTSRIN:
+        cpu->sr[(cpu->gpr[inst->rB] >> 28) & 0xFu] = cpu->gpr[inst->rS];
+        break;
 
     case PPC_OP_MFSPR:
         if (inst->spr == 1) cpu->gpr[inst->rD] = cpu->xer;
@@ -1538,6 +1637,99 @@ static void test_register_arithmetic(CPUState* cpu) {
     exec_raw(cpu, make_xform(266, 5, 3, 4, true), BASE);
     check_eq(cpu->gpr[5], 0, "add. result");
     check_eq(get_cr_field(cpu, 0), 0x2, "add. records EQ");
+
+    cpu->xer = 0;
+    cpu->gpr[11] = 0x7FFFFFFFu;
+    cpu->gpr[12] = 1;
+    exec_raw(cpu, 0x7D4B6614, BASE);
+    check_eq(cpu->gpr[10], 0x80000000u, "addo result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "addo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[12] = 0x7FFFFFFFu;
+    cpu->gpr[13] = 1;
+    exec_raw(cpu, 0x7D6C6C14, BASE);
+    check_eq(cpu->gpr[11], 0x80000000u, "addco result");
+    check_eq(cpu->xer & 0xE0000000u, 0xC0000000u, "addco OV without carry");
+
+    cpu->xer = XER_CA;
+    cpu->gpr[13] = 0x7FFFFFFFu;
+    cpu->gpr[14] = 0;
+    exec_raw(cpu, 0x7D8D7514, BASE);
+    check_eq(cpu->gpr[12], 0x80000000u, "addeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xC0000000u, "addeo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[14] = 0x80000000u;
+    exec_raw(cpu, 0x7DAE05D4, BASE);
+    check_eq(cpu->gpr[13], 0x7FFFFFFFu, "addmeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xE0000000u, "addmeo sets OV SO CA");
+
+    cpu->xer = XER_CA;
+    cpu->gpr[15] = 0x7FFFFFFFu;
+    exec_raw(cpu, 0x7DCF0594, BASE);
+    check_eq(cpu->gpr[14], 0x80000000u, "addzeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xC0000000u, "addzeo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[16] = 1;
+    cpu->gpr[17] = 0x80000000u;
+    exec_raw(cpu, 0x7DF08C50, BASE);
+    check_eq(cpu->gpr[15], 0x7FFFFFFFu, "subfo result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "subfo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[17] = 1;
+    cpu->gpr[18] = 0x80000000u;
+    exec_raw(cpu, 0x7E119410, BASE);
+    check_eq(cpu->gpr[16], 0x7FFFFFFFu, "subfco result");
+    check_eq(cpu->xer & 0xE0000000u, 0xE0000000u, "subfco sets OV SO CA");
+
+    cpu->xer = XER_CA;
+    cpu->gpr[18] = 1;
+    cpu->gpr[19] = 0x80000000u;
+    exec_raw(cpu, 0x7E329D10, BASE);
+    check_eq(cpu->gpr[17], 0x7FFFFFFFu, "subfeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xE0000000u, "subfeo sets OV SO CA");
+
+    cpu->xer = 0;
+    cpu->gpr[19] = 0x7FFFFFFFu;
+    exec_raw(cpu, 0x7E5305D0, BASE);
+    check_eq(cpu->gpr[18], 0x7FFFFFFFu, "subfmeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xE0000000u, "subfmeo sets OV SO CA");
+
+    cpu->xer = XER_CA;
+    cpu->gpr[20] = 0x80000000u;
+    exec_raw(cpu, 0x7E740590, BASE);
+    check_eq(cpu->gpr[19], 0x80000000u, "subfzeo result");
+    check_eq(cpu->xer & 0xE0000000u, 0xC0000000u, "subfzeo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[21] = 0x80000000u;
+    exec_raw(cpu, 0x7E9504D0, BASE);
+    check_eq(cpu->gpr[20], 0x80000000u, "nego result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "nego sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[22] = 0x40000000u;
+    cpu->gpr[23] = 2;
+    exec_raw(cpu, 0x7EB6BDD6, BASE);
+    check_eq(cpu->gpr[21], 0x80000000u, "mullwo result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "mullwo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[23] = 0xFFFFFFFFu;
+    cpu->gpr[24] = 0;
+    exec_raw(cpu, 0x7ED7C7D6, BASE);
+    check_eq(cpu->gpr[22], 0xFFFFFFFFu, "divwo negative divide by zero result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "divwo sets OV SO");
+
+    cpu->xer = 0;
+    cpu->gpr[24] = 5;
+    cpu->gpr[25] = 0;
+    exec_raw(cpu, 0x7EF8CF96, BASE);
+    check_eq(cpu->gpr[23], 0, "divwuo divide by zero result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "divwuo sets OV SO");
 }
 
 static void test_logical_shift_rotate(CPUState* cpu) {
@@ -2562,6 +2754,58 @@ static void test_new_opcodes(CPUState* cpu) {
     exec_raw(cpu, 0x7C0004AC, BASE); check_eq(cpu->gpr[3], marker, "sync preserves state");
     exec_raw(cpu, 0x7C0006AC, BASE); check_eq(cpu->gpr[3], marker, "eieio preserves state");
     exec_raw(cpu, 0x4C00012C, BASE); check_eq(cpu->gpr[3], marker, "isync preserves state");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->gpr[5] = 7;
+    exec_raw(cpu, 0x0C85FFFE, BASE);
+    check_eq(cpu->exception, 0, "twi false does not trap");
+    cpu->gpr[7] = 2;
+    cpu->gpr[8] = 1;
+    exec_raw(cpu, 0x7CC74008, BASE);
+    check_eq(cpu->exception, 0, "tw false does not trap");
+
+    cpu->cr = 0;
+    cpu->xer = 0xE0000000u;
+    exec_raw(cpu, 0x7D000400, BASE);
+    check_eq(get_cr_field(cpu, 2), 0xEu, "mcrxr copies XER field");
+    check_eq(cpu->xer & 0xE0000000u, 0, "mcrxr clears XER SO OV CA");
+
+    cpu->msr = 0x00003040u;
+    exec_raw(cpu, 0x7D2000A6, BASE);
+    check_eq(cpu->gpr[9], 0x00003040u, "mfmsr reads MSR");
+    cpu->gpr[10] = 0x00001000u;
+    exec_raw(cpu, 0x7D400124, BASE);
+    check_eq(cpu->msr, 0x00001000u, "mtmsr writes MSR");
+
+    cpu->sr[3] = 0x33330003u;
+    exec_raw(cpu, 0x7D6304A6, BASE);
+    check_eq(cpu->gpr[11], 0x33330003u, "mfsr reads SR");
+    cpu->sr[13] = 0xDDDD000Du;
+    cpu->gpr[13] = 0xD0001234u;
+    exec_raw(cpu, 0x7D806D26, BASE);
+    check_eq(cpu->gpr[12], 0xDDDD000Du, "mfsrin reads indexed SR");
+    cpu->gpr[14] = 0x44440004u;
+    exec_raw(cpu, 0x7DC401A4, BASE);
+    check_eq(cpu->sr[4], 0x44440004u, "mtsr writes SR");
+    cpu->gpr[16] = 0xE0001234u;
+    cpu->gpr[15] = 0xEEEE000Eu;
+    exec_raw(cpu, 0x7DE081E4, BASE);
+    check_eq(cpu->sr[14], 0xEEEE000Eu, "mtsrin writes indexed SR");
+
+    marker = cpu->gpr[3] = 0x5A5A5A5Au;
+    cpu->gpr[17] = base; cpu->gpr[18] = 0;
+    exec_raw(cpu, 0x7C11906C, BASE); check_eq(cpu->gpr[3], marker, "dcbst preserves state");
+    cpu->gpr[19] = base; cpu->gpr[20] = 0;
+    exec_raw(cpu, 0x7C13A0AC, BASE); check_eq(cpu->gpr[3], marker, "dcbf preserves state");
+    cpu->gpr[21] = base; cpu->gpr[22] = 0;
+    exec_raw(cpu, 0x7C15B1EC, BASE); check_eq(cpu->gpr[3], marker, "dcbtst preserves state");
+    cpu->gpr[23] = base; cpu->gpr[24] = 0;
+    exec_raw(cpu, 0x7C17C22C, BASE); check_eq(cpu->gpr[3], marker, "dcbt preserves state");
+    cpu->gpr[25] = base; cpu->gpr[26] = 0;
+    exec_raw(cpu, 0x7C19D3AC, BASE); check_eq(cpu->gpr[3], marker, "dcbi preserves state");
+    cpu->gpr[27] = base; cpu->gpr[28] = 0;
+    exec_raw(cpu, 0x7C1BE7AC, BASE); check_eq(cpu->gpr[3], marker, "icbi preserves state");
+    exec_raw(cpu, 0x7C00046C, BASE); check_eq(cpu->gpr[3], marker, "tlbsync preserves state");
 }
 
 static void check_cr_logic(CPUState* cpu, const char* name, u32 xo,

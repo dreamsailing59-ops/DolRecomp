@@ -133,6 +133,27 @@ void mem_write8(CPUState* cpu, u32 addr, u8 value) {
     cpu->ram[offset] = value;
 }
 
+bool ppc_add_overflowed(u32 a, u32 b, u32 result) {
+    return (((a ^ result) & (b ^ result)) >> 31) != 0;
+}
+
+void ppc_set_xer_ov(CPUState* cpu, bool ov) {
+    cpu->xer = (cpu->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);
+    if (ov)
+        cpu->xer |= 0x80000000u;
+}
+
+bool ppc_trap_condition(u8 to, u32 a, u32 b) {
+    s32 sa = (s32)a;
+    s32 sb = (s32)b;
+
+    return ((sa < sb) && (to & 0x10u)) ||
+           ((sa > sb) && (to & 0x08u)) ||
+           ((sa == sb) && (to & 0x04u)) ||
+           ((a < b) && (to & 0x02u)) ||
+           ((a > b) && (to & 0x01u));
+}
+
 typedef struct {
     s32 base;
     s32 dec;

@@ -224,6 +224,36 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x7C0004AC, PPC_OP_SYNC, "sync" },
     { 0x7C0006AC, PPC_OP_EIEIO, "eieio" },
     { 0x4C00012C, PPC_OP_ISYNC, "isync" },
+    { 0x7D4B6614, PPC_OP_ADDO, "addo" },
+    { 0x7D6C6C14, PPC_OP_ADDCO, "addco" },
+    { 0x7D8D7514, PPC_OP_ADDEO, "addeo" },
+    { 0x7DAE05D4, PPC_OP_ADDMEO, "addmeo" },
+    { 0x7DCF0594, PPC_OP_ADDZEO, "addzeo" },
+    { 0x7DF08C50, PPC_OP_SUBFO, "subfo" },
+    { 0x7E119410, PPC_OP_SUBFCO, "subfco" },
+    { 0x7E329D10, PPC_OP_SUBFEO, "subfeo" },
+    { 0x7E5305D0, PPC_OP_SUBFMEO, "subfmeo" },
+    { 0x7E740590, PPC_OP_SUBFZEO, "subfzeo" },
+    { 0x7E9504D0, PPC_OP_NEGO, "nego" },
+    { 0x7EB6BDD6, PPC_OP_MULLWO, "mullwo" },
+    { 0x7ED7C7D6, PPC_OP_DIVWO, "divwo" },
+    { 0x7EF8CF96, PPC_OP_DIVWUO, "divwuo" },
+    { 0x0C85FFFE, PPC_OP_TWI, "twi" },
+    { 0x7CC74008, PPC_OP_TW, "tw" },
+    { 0x7D000400, PPC_OP_MCRXR, "mcrxr" },
+    { 0x7D2000A6, PPC_OP_MFMSR, "mfmsr" },
+    { 0x7D400124, PPC_OP_MTMSR, "mtmsr" },
+    { 0x7D6304A6, PPC_OP_MFSR, "mfsr" },
+    { 0x7D806D26, PPC_OP_MFSRIN, "mfsrin" },
+    { 0x7DC401A4, PPC_OP_MTSR, "mtsr" },
+    { 0x7DE081E4, PPC_OP_MTSRIN, "mtsrin" },
+    { 0x7C11906C, PPC_OP_DCBST, "dcbst" },
+    { 0x7C13A0AC, PPC_OP_DCBF, "dcbf" },
+    { 0x7C15B1EC, PPC_OP_DCBTST, "dcbtst" },
+    { 0x7C17C22C, PPC_OP_DCBT, "dcbt" },
+    { 0x7C19D3AC, PPC_OP_DCBI, "dcbi" },
+    { 0x7C1BE7AC, PPC_OP_ICBI, "icbi" },
+    { 0x7C00046C, PPC_OP_TLBSYNC, "tlbsync" },
 };
 
 static u32 make_dform(u32 opcd, u32 rt, u32 ra, u16 imm) {
@@ -248,16 +278,16 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 199\n");
-    CHECK(PPC_OP_COUNT - 1 == 199, "should expose 199 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 229\n");
+    CHECK(PPC_OP_COUNT - 1 == 229, "should expose 229 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 199-opcode set\n");
+    printf("  decode every opcode in the current 229-opcode set\n");
 
-    CHECK(count == 199, "opcode table should have 199 entries, got %d", count);
+    CHECK(count == 229, "opcode table should have 229 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
         char disasm[96];

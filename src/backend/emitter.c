@@ -549,125 +549,168 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         break;
 
     case PPC_OP_ADD:
+    case PPC_OP_ADDO:
         fprintf(out, "    {\n");
-        fprintf(out, "        ctx->gpr[%u] = ctx->gpr[%u] + ctx->gpr[%u];\n",
-                inst->rD, inst->rA, inst->rB);
+        fprintf(out, "        u32 a = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u32 res = a + b;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_ADDC:
+    case PPC_OP_ADDCO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + (u64)ctx->gpr[%u];\n",
-                inst->rA, inst->rB);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 a = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u64 wide = (u64)a + (u64)b;\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_ADDE:
+    case PPC_OP_ADDEO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + (u64)ctx->gpr[%u] + ((ctx->xer >> 29) & 1u);\n",
-                inst->rA, inst->rB);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 carry = (ctx->xer >> 29) & 1u;\n");
+        fprintf(out, "        u32 a = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u64 wide = (u64)a + (u64)b + carry;\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_ADDME:
+    case PPC_OP_ADDMEO:
         fprintf(out, "    {\n");
         fprintf(out, "        u32 input = ctx->gpr[%u];\n", inst->rA);
         fprintf(out, "        u32 carry = (ctx->xer >> 29) & 1u;\n");
         fprintf(out, "        u64 res = (u64)input + 0xFFFFFFFFull + carry;\n");
         fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
         fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | ((res >> 32) ? 0x20000000u : 0u);\n");
-        if (inst->oe) {
-            fprintf(out, "        bool ov = carry == 0 && input == 0x80000000u;\n");
-            fprintf(out, "        ctx->xer = (ctx->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);\n");
-            fprintf(out, "        if (ov) ctx->xer |= 0x80000000u;\n");
-        }
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(input, 0xFFFFFFFFu, (u32)res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_ADDZE:
+    case PPC_OP_ADDZEO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + ((ctx->xer >> 29) & 1u);\n",
-                inst->rA);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 a = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u64 wide = (u64)a + ((ctx->xer >> 29) & 1u);\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, 0u, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_SUBF:
+    case PPC_OP_SUBFO:
         fprintf(out, "    {\n");
-        fprintf(out, "        ctx->gpr[%u] = ctx->gpr[%u] - ctx->gpr[%u];\n",
-                inst->rD, inst->rB, inst->rA);
+        fprintf(out, "        u32 a = ~ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u32 res = a + b + 1u;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_SUBFC:
+    case PPC_OP_SUBFCO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + (u64)(~ctx->gpr[%u]) + 1u;\n",
-                inst->rB, inst->rA);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 a = ~ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u64 wide = (u64)b + (u64)a + 1u;\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_SUBFE:
+    case PPC_OP_SUBFEO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)ctx->gpr[%u] + (u64)(~ctx->gpr[%u]) + ((ctx->xer >> 29) & 1u);\n",
-                inst->rB, inst->rA);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 a = ~ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 b = ctx->gpr[%u];\n", inst->rB);
+        fprintf(out, "        u32 carry = (ctx->xer >> 29) & 1u;\n");
+        fprintf(out, "        u64 wide = (u64)a + (u64)b + carry;\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, b, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_SUBFME:
+    case PPC_OP_SUBFMEO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u32 input = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u32 input = ~ctx->gpr[%u];\n", inst->rA);
         fprintf(out, "        u32 carry = (ctx->xer >> 29) & 1u;\n");
-        fprintf(out, "        u64 res = (u64)(~input) + 0xFFFFFFFFull + carry;\n");
+        fprintf(out, "        u64 res = (u64)input + 0xFFFFFFFFull + carry;\n");
         fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
         fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | ((res >> 32) ? 0x20000000u : 0u);\n");
-        if (inst->oe) {
-            fprintf(out, "        bool ov = carry == 0 && input == 0x7FFFFFFFu;\n");
-            fprintf(out, "        ctx->xer = (ctx->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);\n");
-            fprintf(out, "        if (ov) ctx->xer |= 0x80000000u;\n");
-        }
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(input, 0xFFFFFFFFu, (u32)res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_SUBFZE:
+    case PPC_OP_SUBFZEO:
         fprintf(out, "    {\n");
-        fprintf(out, "        u64 res = (u64)(~ctx->gpr[%u]) + ((ctx->xer >> 29) & 1u);\n",
-                inst->rA);
-        fprintf(out, "        ctx->gpr[%u] = (u32)res;\n", inst->rD);
-        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(res >> 32) & 1u) << 29);\n");
+        fprintf(out, "        u32 a = ~ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        u64 wide = (u64)a + ((ctx->xer >> 29) & 1u);\n");
+        fprintf(out, "        u32 res = (u32)wide;\n");
+        fprintf(out, "        ctx->gpr[%u] = res;\n", inst->rD);
+        fprintf(out, "        ctx->xer = (ctx->xer & ~0x20000000u) | (((u32)(wide >> 32) & 1u) << 29);\n");
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ppc_add_overflowed(a, 0u, res));\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_NEG:
+    case PPC_OP_NEGO:
         fprintf(out, "    {\n");
-        fprintf(out, "        ctx->gpr[%u] = 0u - ctx->gpr[%u];\n",
-                inst->rD, inst->rA);
+        fprintf(out, "        u32 a = ctx->gpr[%u];\n", inst->rA);
+        fprintf(out, "        ctx->gpr[%u] = (~a) + 1u;\n", inst->rD);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, a == 0x80000000u);\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_MULLW:
+    case PPC_OP_MULLWO:
         fprintf(out, "    {\n");
-        fprintf(out, "        ctx->gpr[%u] = (u32)((s64)(s32)ctx->gpr[%u] * (s64)(s32)ctx->gpr[%u]);\n",
-                inst->rD, inst->rA, inst->rB);
+        fprintf(out, "        s64 product = (s64)(s32)ctx->gpr[%u] * (s64)(s32)ctx->gpr[%u];\n",
+                inst->rA, inst->rB);
+        fprintf(out, "        ctx->gpr[%u] = (u32)product;\n", inst->rD);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, product < -0x80000000ll || product > 0x7fffffffll);\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
@@ -691,20 +734,27 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         break;
 
     case PPC_OP_DIVW:
+    case PPC_OP_DIVWO:
         fprintf(out, "    {\n");
         fprintf(out, "        s32 dividend = (s32)ctx->gpr[%u];\n", inst->rA);
         fprintf(out, "        s32 divisor = (s32)ctx->gpr[%u];\n", inst->rB);
-        fprintf(out, "        ctx->gpr[%u] = (divisor == 0 || (dividend == (s32)0x80000000 && divisor == -1)) ? 0u : (u32)(dividend / divisor);\n",
+        fprintf(out, "        bool ov = divisor == 0 || ((u32)dividend == 0x80000000u && divisor == -1);\n");
+        fprintf(out, "        ctx->gpr[%u] = ov ? ((dividend < 0) ? 0xFFFFFFFFu : 0u) : (u32)(dividend / divisor);\n",
                 inst->rD);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, ov);\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
 
     case PPC_OP_DIVWU:
+    case PPC_OP_DIVWUO:
         fprintf(out, "    {\n");
         fprintf(out, "        u32 divisor = ctx->gpr[%u];\n", inst->rB);
         fprintf(out, "        ctx->gpr[%u] = divisor == 0 ? 0u : ctx->gpr[%u] / divisor;\n",
                 inst->rD, inst->rA);
+        if (inst->oe)
+            fprintf(out, "        ppc_set_xer_ov(ctx, divisor == 0);\n");
         emit_record_if_needed(out, inst, inst->rD);
         fprintf(out, "    }\n");
         break;
@@ -1387,6 +1437,15 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         emit_dcbz(out, inst);
         break;
 
+    case PPC_OP_DCBST:
+    case PPC_OP_DCBF:
+    case PPC_OP_DCBTST:
+    case PPC_OP_DCBT:
+    case PPC_OP_DCBI:
+    case PPC_OP_ICBI:
+        fprintf(out, "    (void)ctx;\n");
+        break;
+
     case PPC_OP_LMW:
         fprintf(out, "    {\n");
         fprintf(out, "        u32 ea = ");
@@ -1432,6 +1491,22 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         emit_dynamic_branch(out, inst, "ctx->ctr & ~3u");
         break;
 
+    case PPC_OP_TWI:
+        fprintf(out, "    if (ppc_trap_condition(%uu, ctx->gpr[%u], (u32)(s32)%d)) {\n",
+                inst->to, inst->rA, (int)inst->simm);
+        fprintf(out, "        ctx->exception |= PPC_EXC_PROGRAM;\n");
+        fprintf(out, "        ctx->program_exception |= PPC_PROGRAM_TRAP;\n");
+        fprintf(out, "    }\n");
+        break;
+
+    case PPC_OP_TW:
+        fprintf(out, "    if (ppc_trap_condition(%uu, ctx->gpr[%u], ctx->gpr[%u])) {\n",
+                inst->to, inst->rA, inst->rB);
+        fprintf(out, "        ctx->exception |= PPC_EXC_PROGRAM;\n");
+        fprintf(out, "        ctx->program_exception |= PPC_PROGRAM_TRAP;\n");
+        fprintf(out, "    }\n");
+        break;
+
     case PPC_OP_CRAND:  emit_cr_logical(out, inst, "a & b"); break;
     case PPC_OP_CRANDC: emit_cr_logical(out, inst, "a & ~b"); break;
     case PPC_OP_CREQV:  emit_cr_logical(out, inst, "~(a ^ b)"); break;
@@ -1448,6 +1523,17 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         fprintf(out, "        u32 bits = (ctx->cr >> %u) & 0xFu;\n", src_shift);
         fprintf(out, "        ctx->cr = (ctx->cr & ~(0xFu << %u)) | (bits << %u);\n",
                 dst_shift, dst_shift);
+        fprintf(out, "    }\n");
+        break;
+    }
+
+    case PPC_OP_MCRXR: {
+        u32 dst_shift = cr_field_shift(inst->crfD);
+        fprintf(out, "    {\n");
+        fprintf(out, "        u32 bits = (ctx->xer >> 28) & 0xFu;\n");
+        fprintf(out, "        ctx->cr = (ctx->cr & ~(0xFu << %u)) | (bits << %u);\n",
+                dst_shift, dst_shift);
+        fprintf(out, "        ctx->xer &= ~0xE0000000u;\n");
         fprintf(out, "    }\n");
         break;
     }
@@ -1470,6 +1556,32 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         }
         break;
     }
+
+    case PPC_OP_MFMSR:
+        fprintf(out, "    ctx->gpr[%u] = ctx->msr;\n", inst->rD);
+        break;
+
+    case PPC_OP_MTMSR:
+        fprintf(out, "    ctx->msr = ctx->gpr[%u];\n", inst->rS);
+        break;
+
+    case PPC_OP_MFSR:
+        fprintf(out, "    ctx->gpr[%u] = ctx->sr[%u];\n", inst->rD, inst->sr);
+        break;
+
+    case PPC_OP_MFSRIN:
+        fprintf(out, "    ctx->gpr[%u] = ctx->sr[(ctx->gpr[%u] >> 28) & 0xFu];\n",
+                inst->rD, inst->rB);
+        break;
+
+    case PPC_OP_MTSR:
+        fprintf(out, "    ctx->sr[%u] = ctx->gpr[%u];\n", inst->sr, inst->rS);
+        break;
+
+    case PPC_OP_MTSRIN:
+        fprintf(out, "    ctx->sr[(ctx->gpr[%u] >> 28) & 0xFu] = ctx->gpr[%u];\n",
+                inst->rB, inst->rS);
+        break;
 
     case PPC_OP_MFSPR:
         switch (inst->spr) {
@@ -1497,6 +1609,7 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
     case PPC_OP_SYNC:
     case PPC_OP_EIEIO:
     case PPC_OP_ISYNC:
+    case PPC_OP_TLBSYNC:
         fprintf(out, "    ppc_memory_fence();\n");
         break;
 

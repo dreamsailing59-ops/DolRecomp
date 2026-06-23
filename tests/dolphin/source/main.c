@@ -761,6 +761,184 @@ static void test_register_arithmetic(void) {
     check_eq(result, 0, "add. result");
     check_eq((cr >> 28) & 0xFu, 0x2, "add. records EQ");
 
+    u32 zero = 0;
+    a = 0x7FFFFFFFu;
+    b = 1;
+    asm volatile(
+        "mtxer %4\n"
+        "addo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "addo result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "addo sets OV SO");
+
+    a = 0x7FFFFFFFu;
+    b = 1;
+    asm volatile(
+        "mtxer %4\n"
+        "addco %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "addco result");
+    check_eq(xer & 0xE0000000u, 0xC0000000u, "addco OV without carry");
+
+    a = 0x7FFFFFFFu;
+    b = 0;
+    asm volatile(
+        "mtxer %4\n"
+        "addeo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(ca)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "addeo result");
+    check_eq(xer & 0xE0000000u, 0xC0000000u, "addeo sets OV SO");
+
+    a = 0x80000000u;
+    asm volatile(
+        "mtxer %3\n"
+        "addmeo %0,%2\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x7FFFFFFFu, "addmeo result");
+    check_eq(xer & 0xE0000000u, 0xE0000000u, "addmeo sets OV SO CA");
+
+    a = 0x7FFFFFFFu;
+    asm volatile(
+        "mtxer %3\n"
+        "addzeo %0,%2\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(ca)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "addzeo result");
+    check_eq(xer & 0xE0000000u, 0xC0000000u, "addzeo sets OV SO");
+
+    a = 1;
+    b = 0x80000000u;
+    asm volatile(
+        "mtxer %4\n"
+        "subfo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x7FFFFFFFu, "subfo result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "subfo sets OV SO");
+
+    a = 1;
+    b = 0x80000000u;
+    asm volatile(
+        "mtxer %4\n"
+        "subfco %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x7FFFFFFFu, "subfco result");
+    check_eq(xer & 0xE0000000u, 0xE0000000u, "subfco sets OV SO CA");
+
+    a = 1;
+    b = 0x80000000u;
+    asm volatile(
+        "mtxer %4\n"
+        "subfeo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(ca)
+        : "xer"
+    );
+    check_eq(result, 0x7FFFFFFFu, "subfeo result");
+    check_eq(xer & 0xE0000000u, 0xE0000000u, "subfeo sets OV SO CA");
+
+    a = 0x7FFFFFFFu;
+    asm volatile(
+        "mtxer %3\n"
+        "subfmeo %0,%2\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x7FFFFFFFu, "subfmeo result");
+    check_eq(xer & 0xE0000000u, 0xE0000000u, "subfmeo sets OV SO CA");
+
+    a = 0x80000000u;
+    asm volatile(
+        "mtxer %3\n"
+        "subfzeo %0,%2\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(ca)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "subfzeo result");
+    check_eq(xer & 0xE0000000u, 0xC0000000u, "subfzeo sets OV SO");
+
+    a = 0x80000000u;
+    asm volatile(
+        "mtxer %3\n"
+        "nego %0,%2\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "nego result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "nego sets OV SO");
+
+    a = 0x40000000u;
+    b = 2;
+    asm volatile(
+        "mtxer %4\n"
+        "mullwo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0x80000000u, "mullwo result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "mullwo sets OV SO");
+
+    a = 0xFFFFFFFFu;
+    b = 0;
+    asm volatile(
+        "mtxer %4\n"
+        "divwo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0xFFFFFFFFu, "divwo negative divide by zero result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "divwo sets OV SO");
+
+    a = 5;
+    b = 0;
+    asm volatile(
+        "mtxer %4\n"
+        "divwuo %0,%2,%3\n"
+        "mfxer %1\n"
+        : "=&r"(result), "=r"(xer)
+        : "r"(a), "r"(b), "r"(zero)
+        : "xer"
+    );
+    check_eq(result, 0, "divwuo divide by zero result");
+    check_eq(xer & 0xC0000000u, 0xC0000000u, "divwuo sets OV SO");
+
     asm volatile("mtxer %0" : : "r"(saved_xer));
 }
 
@@ -1735,6 +1913,72 @@ static void test_new_opcodes(void) {
     asm volatile("sync" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "sync preserves state");
     asm volatile("eieio" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "eieio preserves state");
     asm volatile("isync" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "isync preserves state");
+
+    u32 a = 7;
+    value = 0;
+    asm volatile("twi 4,%1,-2" : "+r"(value) : "r"(a));
+    check_eq(value, 0, "twi false does not trap");
+
+    a = 2;
+    u32 b = 1;
+    value = 0;
+    asm volatile("tw 6,%1,%2" : "+r"(value) : "r"(a), "r"(b));
+    check_eq(value, 0, "tw false does not trap");
+
+    u32 xer = 0xE0000000u;
+    asm volatile(
+        "mtxer %2\n"
+        "mcrxr cr2\n"
+        "mfcr %0\n"
+        "mfxer %1\n"
+        : "=&r"(cr), "=r"(xer)
+        : "r"(xer)
+        : "cr2", "xer"
+    );
+    check_eq(cr_field(cr, 2), 0xE, "mcrxr copies XER field");
+    check_eq(xer & 0xE0000000u, 0, "mcrxr clears XER SO OV CA");
+
+    u32 msr0, msr1;
+    asm volatile(
+        "mfmsr %0\n"
+        "mtmsr %0\n"
+        "mfmsr %1\n"
+        : "=&r"(msr0), "=r"(msr1)
+        :
+        : "memory"
+    );
+    check(msr0 == msr1, "mfmsr/mtmsr roundtrip");
+
+    u32 sr0, sr1;
+    asm volatile(
+        "mfsr %0,3\n"
+        "mtsr 3,%0\n"
+        "mfsr %1,3\n"
+        : "=&r"(sr0), "=r"(sr1)
+        :
+        : "memory"
+    );
+    check(sr0 == sr1, "mfsr/mtsr roundtrip");
+
+    a = (u32)mem;
+    asm volatile(
+        "mfsrin %0,%2\n"
+        "mtsrin %0,%2\n"
+        "mfsrin %1,%2\n"
+        : "=&r"(sr0), "=r"(sr1)
+        : "r"(a)
+        : "memory"
+    );
+    check(sr0 == sr1, "mfsrin/mtsrin roundtrip");
+
+    value = 0x5A5A5A5Au;
+    asm volatile("dcbst 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "dcbst preserves state");
+    asm volatile("dcbf 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "dcbf preserves state");
+    asm volatile("dcbtst 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "dcbtst preserves state");
+    asm volatile("dcbt 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "dcbt preserves state");
+    asm volatile("dcbi 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "dcbi preserves state");
+    asm volatile("icbi 0,%1" : "+r"(value) : "r"(mem) : "memory"); check_eq(value, 0x5A5A5A5Au, "icbi preserves state");
+    asm volatile("tlbsync" : "+r"(value) : : "memory"); check_eq(value, 0x5A5A5A5Au, "tlbsync preserves state");
 }
 
 static void test_branches_and_spr(void) {

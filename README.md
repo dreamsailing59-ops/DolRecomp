@@ -18,13 +18,13 @@ include/        - public headers if we end up needing them
 
 ## Opcodes
 
-The current CPU opcode set has 199 implemented opcodes.
+The current CPU opcode set has 229 implemented opcodes.
 
 | Area | Opcodes |
 |------|---------|
 | Immediate arithmetic | addi, addic, addic., addis, mulli, subfic |
-| Register arithmetic | add, addc, adde, addme, addze, divw, divwu, mulhw, mulhwu, mullw, neg, subf, subfc, subfe, subfme, subfze |
-| Compare / branch / CR | b[l][a], bc[l][a], bclr/blr, bcctr/bctr, cmp/cmpw, cmpi/cmpwi, cmpl/cmplw, cmpli/cmplwi, crand, crandc, creqv, crnand, crnor, cror, crorc, crxor, mcrf, mfcr, mtcrf |
+| Register arithmetic | add, addo, addc, addco, adde, addeo, addme, addmeo, addze, addzeo, divw, divwo, divwu, divwuo, mulhw, mulhwu, mullw, mullwo, neg, nego, subf, subfo, subfc, subfco, subfe, subfeo, subfme, subfmeo, subfze, subfzeo |
+| Compare / branch / CR | b[l][a], bc[l][a], bclr/blr, bcctr/bctr, cmp/cmpw, cmpi/cmpwi, cmpl/cmplw, cmpli/cmplwi, crand, crandc, creqv, crnand, crnor, cror, crorc, crxor, mcrf, mcrxr, mfcr, mtcrf, tw, twi |
 | Logical / rotate / shift | and, andc, andi., andis., cntlzw, eqv, extsb, extsh, nand, nor, or, orc, ori, oris, rlwimi, rlwinm, rlwnm, slw, sraw, srawi, srw, xor, xori, xoris |
 | Loads | lbz, lbzu, lbzx, lbzux, lfd, lfdu, lfdux, lfdx, lfs, lfsu, lfsux, lfsx, lha, lhau, lhax, lhaux, lhbrx, lhz, lhzu, lhzx, lhzux, lmw, lswi, lswx, lwarx, lwbrx, lwz, lwzu, lwzx, lwzux |
 | Stores | stb, stbu, stbux, stbx, stfd, stfdu, stfdux, stfdx, stfiwx, stfs, stfsu, stfsux, stfsx, sth, sthbrx, sthu, sthux, sthx, stmw, stswi, stswx, stw, stwbrx, stwcx., stwu, stwux, stwx |
@@ -32,8 +32,8 @@ The current CPU opcode set has 199 implemented opcodes.
 | FPSCR control | mcrfs, mffs, mtfsb0, mtfsb1, mtfsf, mtfsfi |
 | Paired-single memory | psq_l, psq_lu, psq_lux, psq_lx, psq_st, psq_stu, psq_stux, psq_stx |
 | Paired-single arithmetic | ps_abs, ps_add, ps_cmpo0, ps_cmpo1, ps_cmpu0, ps_cmpu1, ps_div, ps_madd, ps_madds0, ps_madds1, ps_merge00, ps_merge01, ps_merge10, ps_merge11, ps_mr, ps_msub, ps_mul, ps_muls0, ps_muls1, ps_nabs, ps_neg, ps_nmadd, ps_nmsub, ps_res, ps_rsqrte, ps_sel, ps_sub, ps_sum0, ps_sum1 |
-| Cache / memory control | dcbz, eieio, isync, sync |
-| SPR moves | mfspr/mflr/mfctr/mfxer, mtspr/mtlr/mtctr/mtxer |
+| Cache / memory control | dcbf, dcbi, dcbst, dcbt, dcbtst, dcbz, eieio, icbi, isync, sync, tlbsync |
+| SPR / system moves | mfmsr, mfspr/mflr/mfctr/mfxer, mfsr, mfsrin, mtmsr, mtspr/mtlr/mtctr/mtxer, mtsr, mtsrin |
 
 ## building
 

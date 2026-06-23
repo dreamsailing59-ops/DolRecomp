@@ -57,17 +57,30 @@ typedef enum {
     PPC_OP_MTSPR,
     PPC_OP_CMP,
     PPC_OP_CMPL,
+    PPC_OP_TWI,
+    PPC_OP_TW,
     PPC_OP_ADD,
+    PPC_OP_ADDO,
     PPC_OP_ADDC,
+    PPC_OP_ADDCO,
     PPC_OP_ADDE,
+    PPC_OP_ADDEO,
     PPC_OP_ADDME,
+    PPC_OP_ADDMEO,
     PPC_OP_ADDZE,
+    PPC_OP_ADDZEO,
     PPC_OP_SUBF,
+    PPC_OP_SUBFO,
     PPC_OP_SUBFC,
+    PPC_OP_SUBFCO,
     PPC_OP_SUBFE,
+    PPC_OP_SUBFEO,
     PPC_OP_SUBFME,
+    PPC_OP_SUBFMEO,
     PPC_OP_SUBFZE,
+    PPC_OP_SUBFZEO,
     PPC_OP_NEG,
+    PPC_OP_NEGO,
     PPC_OP_AND,
     PPC_OP_ANDC,
     PPC_OP_OR,
@@ -199,14 +212,31 @@ typedef enum {
     PPC_OP_PS_CMPO1,
     PPC_OP_PS_SEL,
     PPC_OP_MULLW,
+    PPC_OP_MULLWO,
     PPC_OP_MULHW,
     PPC_OP_MULHWU,
     PPC_OP_DIVW,
+    PPC_OP_DIVWO,
     PPC_OP_DIVWU,
+    PPC_OP_DIVWUO,
     PPC_OP_DCBZ,
+    PPC_OP_DCBST,
+    PPC_OP_DCBF,
+    PPC_OP_DCBTST,
+    PPC_OP_DCBT,
+    PPC_OP_DCBI,
+    PPC_OP_ICBI,
     PPC_OP_SYNC,
     PPC_OP_EIEIO,
     PPC_OP_ISYNC,
+    PPC_OP_MCRXR,
+    PPC_OP_MFMSR,
+    PPC_OP_MTMSR,
+    PPC_OP_MFSR,
+    PPC_OP_MFSRIN,
+    PPC_OP_MTSR,
+    PPC_OP_MTSRIN,
+    PPC_OP_TLBSYNC,
     PPC_OP_COUNT
 } PPCOpcode;
 
@@ -226,6 +256,8 @@ typedef struct {
     u8  fm;
     u8  imm;
     u8  nb;
+    u8  to;
+    u8  sr;
     u8  l;
     u8  w;
     u8  i;
