@@ -1,19 +1,23 @@
 # DolRecomp
 
-DolRecomp is is a tool to statically recompile GameCube DOL executables into C code that can be compiled for any platform. It functions similarly to [N64Recomp](https://github.com/N64Recomp/N64Recomp) (Which targets N64 binaries), and is a modern successor to [GCRecompiler](https://github.com/ExpansionPak/GCRecompiler). It is also a rewrite of "DolRecomp", Which was the original successor to GCRecompiler was hardcoded for [**Paper Mario: The Thousand-Year Door**](https://en.wikipedia.org/wiki/Paper_Mario:_The_Thousand-Year_Door) only. This newer rewrite aims to work with any GameCube DOL executable.
+DolRecomp is a static recompiler for GameCube and Wii PowerPC code. It reads DOLs, decodes the CPU instructions, and writes split C output that can be built somewhere else. (here it is pc)
+
+Right now the focus is the CPU side. Runtime work is going to be separate.
+
+It is in the same general lane as [N64Recomp](https://github.com/N64Recomp/N64Recomp), and it replaces the older [GCRecompiler](https://github.com/ExpansionPak/GCRecompiler) style of one-game hardcoding with something that can handle normal GameCube/Wii executables. Wii U support has started too: RPX files can be opened, executable sections can be decoded, and the CPU profile is marked as Espresso.
 
 ## structure
 
 ```
 src/
-  frontend/     - DOL/REL loading, PPC disassembly, control flow analysis
-  backend/      - code generation, target arch emission (x86_64, arm64, etc)
-  core/         - shared types and the minimal CPU support ABI used by generated code/tests
+  frontend/     - DOL/RPX loading and PPC decode
+  backend/      - C output
+  core/         - CPU helpers used by generated code and tests
 
 tools/          - standalone utilities
-docs/           - notes, specs, rambling design docs
-scripts/        - build helpers, CI stuff, whatever
-include/        - public headers if we end up needing them
+docs/           - notes and specs
+scripts/        - build/test helpers
+include/        - public headers if needed later
 ```
 
 ## Opcodes
@@ -37,40 +41,46 @@ The current CPU opcode set has 236 implemented opcodes.
 
 ## building
 
-DolRecomp is pure C with no external submodules, so if you have VSCode you can simply build the project by pressing `Ctrl + Shift + P` (`Command + Shift + P` on macOS) and selecting `CMake: Build`.
+DolRecomp is C and builds with CMake. zlib is optional, but needed for compressed RPX sections. The CMake file will try devkitPro's MSYS2 zlib first when it is installed.
 
-On windows. If you prefer using the command line, you can use the following commands in this exact order
+From the repo root:
 
 ```
-mkdir build
-cd build
 cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
-cmake --build build
+cmake --build build -j14
 ```
 
 ## usage
 
-Download the local GameTDB/WiiTDB title list first:
+For Wii title lookup, grab the local GameTDB/WiiTDB list once:
 
 ```
 dolrecomp.exe --setup
 ```
 
-Wii DOLs need a 6-character title ID so DolRecomp can look up the game name through `database\titles.txt`:
+Wii DOLs need the six-character title ID:
 
 ```
 dolrecomp.exe -j14 path\to\main.dol SUKE01 build
 ```
 
-GameCube DOLs skip the title ID and write to a generic generated folder:
+GameCube DOLs do not use a title ID:
 
 ```
 dolrecomp.exe --gamecube path\to\main.dol build
 ```
 
-If the last argument is a directory, output goes under `<title-id>_generated\` for Wii or `generated\` for GameCube. If the last argument ends in `.c`, that exact C file is used. `-jN` controls how many worker jobs write split C chunks.
+Wii U uses the Espresso CPU profile and takes an RPX:
 
-If `database\titles.txt` is missing, DolRecomp warns and uses GameCube mode.
+```
+dolrecomp.exe --cpu espresso path\to\main.rpx build
+```
+
+todo: add more documentation here as it grows
+
+If the last argument is a directory, Wii output goes under `<title-id>_generated\`. GameCube and Wii U use `generated\`. If the last argument ends in `.c`, that exact C file is used. `-jN` controls how many worker jobs write split C chunks.
+
+If `database\titles.txt` is missing during Wii mode, DolRecomp warns and falls back to GameCube mode.
 
 ## contributing
 

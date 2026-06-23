@@ -19,6 +19,7 @@
 
 #include "core/types.h"
 #include "frontend/dol.h"
+#include "frontend/rpx.h"
 #include "frontend/decoder.h"
 #include "backend/emitter.h"
 
@@ -31,13 +32,14 @@
 static void print_usage(const char* argv0) {
     (void)argv0;
 
-    fprintf(stderr, "usage: dolrecomp.exe [-jN] [--gamecube] <input.dol> [title-id] [output.c | output-dir]\n");
+    fprintf(stderr, "usage: dolrecomp.exe [-jN] [--cpu gekko|broadway|espresso] [--gamecube] <input> [wii-title-id] [output.c | output-dir]\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "wii:      dolrecomp.exe <input.dol> SUKE01 build\n");
     fprintf(stderr, "gamecube: dolrecomp.exe --gamecube <input.dol> build\n");
+    fprintf(stderr, "wii u cpu: dolrecomp.exe --cpu espresso <input.rpx> build\n");
     fprintf(stderr, "with output.c: writes that split C set\n");
-    fprintf(stderr, "with output-dir: writes output-dir/<title-id>_generated/<title-id>.c\n");
-    fprintf(stderr, "with --gamecube output-dir: writes output-dir/generated/generated.c\n");
+    fprintf(stderr, "with output-dir: writes output-dir/<wii-title-id>_generated/<wii-title-id>.c\n");
+    fprintf(stderr, "with --gamecube or --cpu espresso output-dir: writes output-dir/generated/generated.c\n");
     fprintf(stderr, "-jN writes split C files with N jobs, like -j14\n");
     fprintf(stderr, "--setup downloads database/titles.txt from GameTDB\n");
     fprintf(stderr, "without output: writes generated code under the current directory\n");
@@ -134,6 +136,12 @@ static int has_c_extension(const char* path) {
     return dot && ascii_case_equal(dot, ".c");
 }
 
+static int has_rpx_extension(const char* path) {
+    const char* base = path_basename(path);
+    const char* dot = strrchr(base, '.');
+    return dot && ascii_case_equal(dot, ".rpx");
+}
+
 static int is_title_id(const char* text) {
     size_t len = strlen(text);
     if (len != 6)
@@ -153,6 +161,38 @@ static int is_title_id(const char* text) {
 
 static int is_title_id_length_valid(const char* text) {
     return strlen(text) == 6;
+}
+
+static int parse_cpu_name(const char* text, DolRecompCPU* cpu) {
+    if (ascii_case_equal(text, "gekko") || ascii_case_equal(text, "gamecube")) {
+        *cpu = DOLRECOMP_CPU_GEKKO;
+        return 1;
+    }
+
+    if (ascii_case_equal(text, "broadway") || ascii_case_equal(text, "wii")) {
+        *cpu = DOLRECOMP_CPU_BROADWAY;
+        return 1;
+    }
+
+    if (ascii_case_equal(text, "espresso") || ascii_case_equal(text, "wiiu") ||
+        ascii_case_equal(text, "wii-u")) {
+        *cpu = DOLRECOMP_CPU_ESPRESSO;
+        return 1;
+    }
+
+    return 0;
+}
+
+static const char* cpu_display_name(DolRecompCPU cpu) {
+    switch (cpu) {
+    case DOLRECOMP_CPU_BROADWAY:
+        return "Broadway (Wii)";
+    case DOLRECOMP_CPU_ESPRESSO:
+        return "Espresso (Wii U)";
+    case DOLRECOMP_CPU_GEKKO:
+    default:
+        return "Gekko (GameCube)";
+    }
 }
 
 static void copy_title_id(char* out, size_t out_size, const char* title_id) {
@@ -562,11 +602,23 @@ static void emit_chunk_prototype(FILE* out, u32 func_addr) {
 }
 
 typedef struct {
+    const char* label;
+    const char* name;
+    const u8* data;
+    u32 index;
+    u32 file_offset;
+    u32 address;
+    u32 size;
+} LoadedCodeSection;
+
+typedef struct {
     const char* input_path;
     const char* title_id_arg;
     const char* output_arg;
+    DolRecompCPU cpu;
     u32 jobs;
     int gamecube_mode;
+    int cpu_explicit;
     int setup_mode;
     int show_help;
 } CliOptions;
@@ -589,6 +641,7 @@ static int parse_cli(int argc, char** argv, CliOptions* opts) {
     int positional_count = 0;
 
     memset(opts, 0, sizeof(*opts));
+    opts->cpu = DOLRECOMP_CPU_GEKKO;
     opts->jobs = 1;
 
     for (int i = 1; i < argc; i++) {
@@ -607,6 +660,46 @@ static int parse_cli(int argc, char** argv, CliOptions* opts) {
 
         if (strcmp(arg, "--gamecube") == 0 || strcmp(arg, "-gc") == 0) {
             opts->gamecube_mode = 1;
+            continue;
+        }
+
+        if (strcmp(arg, "--cpu") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "error: --cpu needs gekko, broadway, or espresso\n");
+                return 0;
+            }
+            if (!parse_cpu_name(argv[++i], &opts->cpu)) {
+                fprintf(stderr, "error: unknown cpu '%s'\n", argv[i]);
+                return 0;
+            }
+            opts->cpu_explicit = 1;
+            continue;
+        }
+
+        if (strncmp(arg, "--cpu=", 6) == 0) {
+            if (!parse_cpu_name(arg + 6, &opts->cpu)) {
+                fprintf(stderr, "error: unknown cpu '%s'\n", arg + 6);
+                return 0;
+            }
+            opts->cpu_explicit = 1;
+            continue;
+        }
+
+        if (strcmp(arg, "--gekko") == 0) {
+            opts->cpu = DOLRECOMP_CPU_GEKKO;
+            opts->cpu_explicit = 1;
+            continue;
+        }
+
+        if (strcmp(arg, "--broadway") == 0) {
+            opts->cpu = DOLRECOMP_CPU_BROADWAY;
+            opts->cpu_explicit = 1;
+            continue;
+        }
+
+        if (strcmp(arg, "--espresso") == 0 || strcmp(arg, "--wiiu-cpu") == 0) {
+            opts->cpu = DOLRECOMP_CPU_ESPRESSO;
+            opts->cpu_explicit = 1;
             continue;
         }
 
@@ -656,9 +749,14 @@ static int parse_cli(int argc, char** argv, CliOptions* opts) {
         return 0;
     }
 
+    if (opts->gamecube_mode && opts->cpu == DOLRECOMP_CPU_ESPRESSO) {
+        fprintf(stderr, "error: --gamecube cannot be used with espresso\n");
+        return 0;
+    }
+
     opts->input_path = positional[0];
 
-    if (opts->gamecube_mode) {
+    if (opts->gamecube_mode || opts->cpu == DOLRECOMP_CPU_ESPRESSO) {
         opts->title_id_arg = "generated";
         opts->output_arg = positional_count > 1 ? positional[1] : NULL;
         if (positional_count > 2) {
@@ -882,8 +980,11 @@ static u32 effective_chunk_jobs(u32 job_count, u32 requested_jobs) {
     return requested_jobs;
 }
 
-static int emit_dol_split(const DOLFile* dol, const char* output_path,
-                          u32 jobs, int local_chunks_dir) {
+static int emit_code_sections_split(const LoadedCodeSection* sections,
+                                    u32 section_count,
+                                    const char* output_path,
+                                    DolRecompCPU cpu, u32 jobs,
+                                    int local_chunks_dir) {
     char stem[1024];
     char header_path[1100];
     char chunks_dir[1100];
@@ -938,23 +1039,28 @@ static int emit_dol_split(const DOLFile* dol, const char* output_path,
     fprintf(manifest, "#include \"%s\"\n\n", include_name);
     fprintf(manifest, "// Build these C files too:\n");
 
-    emit_header(header);
+    emit_header_for_cpu(header, cpu);
     fprintf(header, "\n// Function entry points\n");
 
     u32 file_count = 0;
 
-    for (int s = 0; s < DOL_NUM_TEXT; s++) {
-        if (dol->header.text_sizes[s] == 0) continue;
+    for (u32 s = 0; s < section_count; s++) {
+        const LoadedCodeSection* section = &sections[s];
+        if (section->size == 0 || !section->data) continue;
 
-        const u8* section_data = dol_get_text_section(dol, s);
-        if (!section_data) continue;
-
-        u32 base_addr = dol->header.text_addresses[s];
-        u32 section_sz = dol->header.text_sizes[s];
+        const u8* section_data = section->data;
+        u32 base_addr = section->address;
+        u32 section_sz = section->size;
         u32 num_insts = section_sz / 4;
 
-        printf("decoding text[%d]: %u instructions at 0x%08X\n",
-               s, num_insts, base_addr);
+        if (section->name && section->name[0] != '\0') {
+            printf("decoding %s[%u] %s: %u instructions at 0x%08X\n",
+                   section->label, section->index, section->name, num_insts,
+                   base_addr);
+        } else {
+            printf("decoding %s[%u]: %u instructions at 0x%08X\n",
+                   section->label, section->index, num_insts, base_addr);
+        }
 
         PPCInst* insts = (PPCInst*)malloc(num_insts * sizeof(PPCInst));
         if (!insts) {
@@ -997,7 +1103,8 @@ static int emit_dol_split(const DOLFile* dol, const char* output_path,
                 chunk_count = EMIT_CHUNK_INSTRUCTIONS;
 
             if (snprintf(chunk_name, sizeof(chunk_name),
-                         "chunk_%04u_text%d_%08X.c", file_count, s, func_addr) >=
+                         "chunk_%04u_%s%u_%08X.c", file_count,
+                         section->label, section->index, func_addr) >=
                 (int)sizeof(chunk_name)) {
                 fprintf(stderr, "error: chunk name is too long\n");
                 free(chunk_jobs);
@@ -1063,6 +1170,53 @@ static int emit_dol_split(const DOLFile* dol, const char* output_path,
     return 1;
 }
 
+static int emit_dol_split(const DOLFile* dol, const char* output_path,
+                          DolRecompCPU cpu, u32 jobs, int local_chunks_dir) {
+    LoadedCodeSection sections[DOL_NUM_TEXT];
+    u32 section_count = 0;
+
+    for (u32 i = 0; i < DOL_NUM_TEXT; i++) {
+        if (dol->header.text_sizes[i] == 0)
+            continue;
+
+        const u8* data = dol_get_text_section(dol, (int)i);
+        if (!data)
+            continue;
+
+        LoadedCodeSection* section = &sections[section_count++];
+        section->label = "text";
+        section->name = NULL;
+        section->data = data;
+        section->index = i;
+        section->file_offset = dol->header.text_offsets[i];
+        section->address = dol->header.text_addresses[i];
+        section->size = dol->header.text_sizes[i];
+    }
+
+    return emit_code_sections_split(sections, section_count, output_path, cpu,
+                                    jobs, local_chunks_dir);
+}
+
+static int emit_rpx_split(const RPXFile* rpx, const char* output_path,
+                          DolRecompCPU cpu, u32 jobs, int local_chunks_dir) {
+    LoadedCodeSection sections[RPX_MAX_CODE_SECTIONS];
+
+    for (u32 i = 0; i < rpx->code_section_count; i++) {
+        const RPXCodeSection* code = &rpx->code_sections[i];
+        LoadedCodeSection* section = &sections[i];
+        section->label = "rpx";
+        section->name = code->name;
+        section->data = code->data;
+        section->index = i;
+        section->file_offset = code->offset;
+        section->address = code->address;
+        section->size = code->size;
+    }
+
+    return emit_code_sections_split(sections, rpx->code_section_count,
+                                    output_path, cpu, jobs, local_chunks_dir);
+}
+
 int main(int argc, char** argv) {
     CliOptions opts;
     if (!parse_cli(argc, argv, &opts))
@@ -1081,19 +1235,28 @@ int main(int argc, char** argv) {
     const char* output_path = NULL;
     int local_chunks_dir = 0;
     int effective_gamecube_mode = opts.gamecube_mode;
+    DolRecompCPU effective_cpu = opts.cpu;
+    int titleless_mode = effective_gamecube_mode || effective_cpu == DOLRECOMP_CPU_ESPRESSO;
+    int espresso_rpx_mode = effective_cpu == DOLRECOMP_CPU_ESPRESSO;
 
     title_id[0] = '\0';
     game_name[0] = '\0';
 
-    if (!effective_gamecube_mode && !database_titles_available()) {
+    if (has_rpx_extension(input_path) && effective_cpu != DOLRECOMP_CPU_ESPRESSO) {
+        fprintf(stderr, "error: .rpx input requires --cpu espresso\n");
+        return 1;
+    }
+
+    if (!titleless_mode && !database_titles_available()) {
         print_database_missing_notice();
         effective_gamecube_mode = 1;
+        titleless_mode = 1;
         if (!output_arg && title_id_arg && !is_title_id_length_valid(title_id_arg))
             output_arg = title_id_arg;
         title_id_arg = NULL;
     }
 
-    if (!effective_gamecube_mode) {
+    if (!titleless_mode) {
         if (!title_id_arg) {
             fprintf(stderr, "title id missing! specify gamecube mode if working with a gamecube dol with --gamecube\n");
             return 1;
@@ -1108,17 +1271,65 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!opts.cpu_explicit)
+        effective_cpu = effective_gamecube_mode ? DOLRECOMP_CPU_GEKKO : DOLRECOMP_CPU_BROADWAY;
+    espresso_rpx_mode = effective_cpu == DOLRECOMP_CPU_ESPRESSO;
+
     if (effective_gamecube_mode) {
         snprintf(game_name, sizeof(game_name), "GameCube DOL");
+    } else if (effective_cpu == DOLRECOMP_CPU_ESPRESSO) {
+        snprintf(game_name, sizeof(game_name), "Wii U executable");
     } else {
         copy_title_id(title_id, sizeof(title_id), title_id_arg);
         describe_game(game_name, sizeof(game_name), title_id, 0);
+    }
+
+    if (espresso_rpx_mode) {
+        if (!has_rpx_extension(input_path)) {
+            fprintf(stderr, "error: espresso mode expects an .rpx input\n");
+            return 1;
+        }
+
+        RPXFile rpx;
+        if (!rpx_load(&rpx, input_path))
+            return 1;
+
+        rpx_print_info(&rpx, game_name);
+        printf("cpu: %s\n", cpu_display_name(effective_cpu));
+
+        if (!output_arg) {
+            printf("\ngenerating code...\n");
+            output_arg = ".";
+        }
+
+        if (has_c_extension(output_arg)) {
+            output_path = output_arg;
+        } else {
+            if (!build_gamecube_output_path(output_arg, named_output_path,
+                                            sizeof(named_output_path))) {
+                rpx_free(&rpx);
+                return 1;
+            }
+            output_path = named_output_path;
+            local_chunks_dir = 1;
+        }
+
+        printf("\nwriting output to: %s\n", output_path);
+        if (!emit_rpx_split(&rpx, output_path, effective_cpu, opts.jobs,
+                            local_chunks_dir)) {
+            rpx_free(&rpx);
+            return 1;
+        }
+
+        rpx_free(&rpx);
+        return 0;
     }
 
     DOLFile dol;
     if (!dol_load(&dol, input_path))
         return 1;
     dol_print_info(&dol, game_name);
+    printf("cpu: %s\n", cpu_display_name(effective_cpu));
 
     if (!output_arg) {
         printf("\ngenerating code...\n");
@@ -1127,7 +1338,7 @@ int main(int argc, char** argv) {
 
     if (has_c_extension(output_arg)) {
         output_path = output_arg;
-    } else if (effective_gamecube_mode) {
+    } else if (titleless_mode) {
         if (!build_gamecube_output_path(output_arg, named_output_path,
                                         sizeof(named_output_path))) {
             dol_free(&dol);
@@ -1146,7 +1357,7 @@ int main(int argc, char** argv) {
     }
 
     printf("\nwriting output to: %s\n", output_path);
-    if (!emit_dol_split(&dol, output_path, opts.jobs, local_chunks_dir)) {
+    if (!emit_dol_split(&dol, output_path, effective_cpu, opts.jobs, local_chunks_dir)) {
         dol_free(&dol);
         return 1;
     }

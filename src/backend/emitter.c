@@ -344,9 +344,37 @@ static void emit_record_if_needed(FILE* out, const PPCInst* inst, u8 reg) {
     }
 }
 
-void emit_header(FILE* out) {
+static const char* emit_cpu_macro(DolRecompCPU cpu) {
+    switch (cpu) {
+    case DOLRECOMP_CPU_BROADWAY:
+        return "BROADWAY";
+    case DOLRECOMP_CPU_ESPRESSO:
+        return "ESPRESSO";
+    case DOLRECOMP_CPU_GEKKO:
+    default:
+        return "GEKKO";
+    }
+}
+
+static const char* emit_cpu_label(DolRecompCPU cpu) {
+    switch (cpu) {
+    case DOLRECOMP_CPU_BROADWAY:
+        return "broadway";
+    case DOLRECOMP_CPU_ESPRESSO:
+        return "espresso";
+    case DOLRECOMP_CPU_GEKKO:
+    default:
+        return "gekko";
+    }
+}
+
+void emit_header_for_cpu(FILE* out, DolRecompCPU cpu) {
     fprintf(out,
         "// DolRecomp output\n"
+        "// cpu: %s\n"
+        "\n"
+        "#define DOLRECOMP_CPU_%s 1\n"
+        "#define DOLRECOMP_CPU_NAME \"%s\"\n"
         "\n"
         "#include <string.h>\n"
         "#include <math.h>\n"
@@ -393,7 +421,14 @@ void emit_header(FILE* out) {
         "    return dolrecomp_f32_to_bits((f32)value);\n"
         "}\n"
         "\n"
-    );
+        ,
+        emit_cpu_label(cpu),
+        emit_cpu_macro(cpu),
+        emit_cpu_label(cpu));
+}
+
+void emit_header(FILE* out) {
+    emit_header_for_cpu(out, DOLRECOMP_CPU_GEKKO);
 }
 
 void emit_footer(FILE* out) {

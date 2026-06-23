@@ -5,11 +5,18 @@
 #include "../frontend/decoder.h"
 #include <stdio.h>
 
+typedef enum {
+    DOLRECOMP_CPU_GEKKO,
+    DOLRECOMP_CPU_BROADWAY,
+    DOLRECOMP_CPU_ESPRESSO,
+} DolRecompCPU;
+
 // well it's kinda in the name.
 // similar approach to N64Recomp's emitter
 
 // emit the boilerplate header (includes, typedefs, etc)
 void emit_header(FILE* out);
+void emit_header_for_cpu(FILE* out, DolRecompCPU cpu);
 
 // emit a single recompiled function as C code
 void emit_function(FILE* out, const PPCInst* insts, u32 count, u32 func_addr);

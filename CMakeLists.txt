@@ -11,14 +11,44 @@ else()
     add_compile_options(-Wall -Wextra -Wno-unused-parameter)
 endif()
 
+if(NOT DEFINED ZLIB_ROOT)
+    if(DEFINED ENV{DEVKITPRO})
+        set(_devkitpro "$ENV{DEVKITPRO}")
+        if(MSYS AND _devkitpro MATCHES "^[A-Za-z]:")
+            execute_process(
+                COMMAND cygpath -u "${_devkitpro}"
+                OUTPUT_VARIABLE _devkitpro
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+        endif()
+    elseif(EXISTS "/opt/devkitpro")
+        set(_devkitpro "/opt/devkitpro")
+    endif()
+
+    if(DEFINED _devkitpro)
+        set(_devkitpro_zlib "${_devkitpro}/msys2/ucrt64")
+        if(EXISTS "${_devkitpro_zlib}/include/zlib.h")
+            set(ZLIB_ROOT "${_devkitpro_zlib}")
+        endif()
+    endif()
+endif()
+
+find_package(ZLIB QUIET)
+
 add_executable(dolrecomp
     src/main.c
     src/frontend/dol.c
+    src/frontend/rpx.c
     src/frontend/decoder.c
     src/backend/emitter.c
 )
 
 target_include_directories(dolrecomp PRIVATE src)
+if(ZLIB_FOUND)
+    target_compile_definitions(dolrecomp PRIVATE DOLRECOMP_HAVE_ZLIB)
+    target_link_libraries(dolrecomp PRIVATE ZLIB::ZLIB)
+endif()
 if(NOT WIN32)
     find_package(Threads REQUIRED)
     target_link_libraries(dolrecomp PRIVATE Threads::Threads)
@@ -42,6 +72,17 @@ add_executable(test_cross_check
 target_include_directories(test_cross_check PRIVATE src)
 add_test(NAME cross_check COMMAND test_cross_check)
 
+add_executable(test_rpx
+    tests/test_rpx.c
+    src/frontend/rpx.c
+)
+target_include_directories(test_rpx PRIVATE src)
+if(ZLIB_FOUND)
+    target_compile_definitions(test_rpx PRIVATE DOLRECOMP_HAVE_ZLIB)
+    target_link_libraries(test_rpx PRIVATE ZLIB::ZLIB)
+endif()
+add_test(NAME rpx COMMAND test_rpx)
+
 # PC-side behavior checks against Dolphin-derived expectations
 add_executable(test_pc_reference
     tests/test_pc_reference.c
@@ -50,7 +91,7 @@ add_executable(test_pc_reference
     src/core/cpu.c
 )
 target_include_directories(test_pc_reference PRIVATE src)
-if(NOT MSVC)
+if(NOT WIN32)
     target_link_libraries(test_pc_reference PRIVATE m)
 endif()
 add_test(NAME pc_reference COMMAND test_pc_reference)
