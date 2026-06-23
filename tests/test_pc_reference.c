@@ -50,6 +50,12 @@ static u32 make_dform(u32 opcd, u32 rt, u32 ra, u16 imm) {
     return (opcd << 26) | (rt << 21) | (ra << 16) | imm;
 }
 
+static u32 make_psq_dform(u32 opcd, u32 fr, u32 ra, s16 imm, bool w, u8 i) {
+    return (opcd << 26) | (fr << 21) | (ra << 16) |
+           (w ? 0x8000u : 0u) | ((u32)(i & 7u) << 12) |
+           ((u32)imm & 0x0FFFu);
+}
+
 static u32 make_iform(u32 opcd, s32 offset, bool aa, bool lk) {
     return (opcd << 26) | ((u32)offset & 0x03FFFFFCu) |
            (aa ? 2u : 0u) | (lk ? 1u : 0u);
@@ -1120,8 +1126,8 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
     case PPC_OP_PSQ_LU: {
         bool update = inst->op == PPC_OP_PSQ_LU;
         u32 ea = dform_ea(cpu, inst, update);
-        cpu->fpr[inst->rD] = (f64)f32_from_bits(mem_read32(cpu, ea));
-        cpu->ps1[inst->rD] = inst->w ? 1.0 : (f64)f32_from_bits(mem_read32(cpu, ea + 4));
+        ppc_psq_load(cpu, inst->rD, ea, inst->w, inst->i, false, inst->address);
+        if (cpu->exception) break;
         if (update) cpu->gpr[inst->rA] = ea;
         break;
     }
@@ -1130,8 +1136,8 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
     case PPC_OP_PSQ_LUX: {
         bool update = inst->op == PPC_OP_PSQ_LUX;
         u32 ea = xform_ea(cpu, inst, update);
-        cpu->fpr[inst->rD] = (f64)f32_from_bits(mem_read32(cpu, ea));
-        cpu->ps1[inst->rD] = inst->w ? 1.0 : (f64)f32_from_bits(mem_read32(cpu, ea + 4));
+        ppc_psq_load(cpu, inst->rD, ea, inst->w, inst->i, true, inst->address);
+        if (cpu->exception) break;
         if (update) cpu->gpr[inst->rA] = ea;
         break;
     }
@@ -1242,9 +1248,8 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
     case PPC_OP_PSQ_STU: {
         bool update = inst->op == PPC_OP_PSQ_STU;
         u32 ea = dform_ea(cpu, inst, update);
-        mem_write32(cpu, ea, f32_to_bits((f32)cpu->fpr[inst->rS]));
-        if (!inst->w)
-            mem_write32(cpu, ea + 4, f32_to_bits((f32)cpu->ps1[inst->rS]));
+        ppc_psq_store(cpu, inst->rS, ea, inst->w, inst->i, false, inst->address);
+        if (cpu->exception) break;
         if (update) cpu->gpr[inst->rA] = ea;
         break;
     }
@@ -1253,9 +1258,8 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
     case PPC_OP_PSQ_STUX: {
         bool update = inst->op == PPC_OP_PSQ_STUX;
         u32 ea = xform_ea(cpu, inst, update);
-        mem_write32(cpu, ea, f32_to_bits((f32)cpu->fpr[inst->rS]));
-        if (!inst->w)
-            mem_write32(cpu, ea + 4, f32_to_bits((f32)cpu->ps1[inst->rS]));
+        ppc_psq_store(cpu, inst->rS, ea, inst->w, inst->i, true, inst->address);
+        if (cpu->exception) break;
         if (update) cpu->gpr[inst->rA] = ea;
         break;
     }
@@ -1494,6 +1498,7 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         else if (inst->spr == 27) cpu->gpr[inst->rD] = cpu->srr1;
         else if (inst->spr == 268 || inst->spr == 269) cpu->gpr[inst->rD] = ppc_mftb(cpu, inst->spr, inst->address);
         else if (inst->spr == 282) cpu->gpr[inst->rD] = cpu->ear;
+        else if (inst->spr >= 912 && inst->spr <= 919) cpu->gpr[inst->rD] = cpu->gqr[inst->spr - 912];
         else if (inst->spr == 920) cpu->gpr[inst->rD] = cpu->hid2;
         break;
 
@@ -1504,6 +1509,7 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         else if (inst->spr == 26) cpu->srr0 = cpu->gpr[inst->rS];
         else if (inst->spr == 27) cpu->srr1 = cpu->gpr[inst->rS];
         else if (inst->spr == 282) cpu->ear = cpu->gpr[inst->rS];
+        else if (inst->spr >= 912 && inst->spr <= 919) cpu->gqr[inst->spr - 912] = cpu->gpr[inst->rS];
         else if (inst->spr == 920) cpu->hid2 = cpu->gpr[inst->rS];
         break;
 
@@ -2238,6 +2244,7 @@ static void test_psq_memory(CPUState* cpu) {
     printf("--- paired-single memory ---\n");
 
     cpu_reset(cpu);
+    cpu->hid2 = PPC_HID2_PSE | PPC_HID2_LSQE;
     cpu->gpr[4] = base;
     mem_write32(cpu, base, 0x3F800000u);
     mem_write32(cpu, base + 4, 0x40000000u);
@@ -2320,6 +2327,92 @@ static void test_psq_memory(CPUState* cpu) {
     check_eq(mem_read32(cpu, base + 0xA0), 0x41980000u, "psq_stux w0 ps0");
     check_eq(mem_read32(cpu, base + 0xA4), 0x41A00000u, "psq_stux w0 ps1");
     check_eq(cpu->gpr[4], base + 0xA0, "psq_stux updates rA");
+
+    cpu->gpr[4] = base;
+    cpu->gqr[1] = (1u << 24) | (4u << 16) | (1u << 8) | 4u;
+    mem_write8(cpu, base + 0xB0, 10);
+    mem_write8(cpu, base + 0xB1, 246);
+    exec_raw(cpu, make_psq_dform(56, 17, 4, 0x0B0, false, 1), BASE);
+    check_eq(f32_to_bits((f32)cpu->fpr[17]), 0x40A00000u, "psq_l u8 scale ps0");
+    check_eq(f32_to_bits((f32)cpu->ps1[17]), 0x42F60000u, "psq_l u8 scale ps1");
+
+    cpu->fpr[18] = 5.75;
+    cpu->ps1[18] = 200.25;
+    exec_raw(cpu, make_psq_dform(60, 18, 4, 0x0B4, false, 1), BASE);
+    check_eq(mem_read8(cpu, base + 0xB4), 11, "psq_st u8 truncates");
+    check_eq(mem_read8(cpu, base + 0xB5), 255, "psq_st u8 clamps high");
+
+    cpu->gqr[2] = (63u << 24) | (5u << 16) | (63u << 8) | 5u;
+    mem_write16(cpu, base + 0xB8, 300);
+    mem_write16(cpu, base + 0xBA, 400);
+    exec_raw(cpu, make_psq_dform(56, 19, 4, 0x0B8, false, 2), BASE);
+    check_eq(f32_to_bits((f32)cpu->fpr[19]), 0x44160000u, "psq_l u16 negative scale ps0");
+    check_eq(f32_to_bits((f32)cpu->ps1[19]), 0x44480000u, "psq_l u16 negative scale ps1");
+
+    cpu->fpr[19] = 200.0;
+    cpu->ps1[19] = 200000.0;
+    exec_raw(cpu, make_psq_dform(60, 19, 4, 0x0BC, false, 2), BASE);
+    check_eq(mem_read16(cpu, base + 0xBC), 100, "psq_st u16 negative scale");
+    check_eq(mem_read16(cpu, base + 0xBE), 65535, "psq_st u16 clamps high");
+
+    cpu->gqr[3] = (6u << 16) | 6u;
+    mem_write8(cpu, base + 0xC0, 0xFE);
+    mem_write8(cpu, base + 0xC1, 0x7F);
+    exec_raw(cpu, make_psq_dform(56, 20, 4, 0x0C0, false, 3), BASE);
+    check_eq(f32_to_bits((f32)cpu->fpr[20]), 0xC0000000u, "psq_l s8 ps0");
+    check_eq(f32_to_bits((f32)cpu->ps1[20]), 0x42FE0000u, "psq_l s8 ps1");
+
+    cpu->fpr[20] = -200.0;
+    cpu->ps1[20] = 200.0;
+    exec_raw(cpu, make_psq_dform(60, 20, 4, 0x0C4, false, 3), BASE);
+    check_eq(mem_read8(cpu, base + 0xC4), 0x80, "psq_st s8 clamps low");
+    check_eq(mem_read8(cpu, base + 0xC5), 0x7F, "psq_st s8 clamps high");
+
+    cpu->gqr[4] = (2u << 24) | (7u << 16) | (2u << 8) | 7u;
+    mem_write16(cpu, base + 0xC8, 0xFF9Cu);
+    mem_write16(cpu, base + 0xCA, 0x0064u);
+    exec_raw(cpu, make_psq_dform(56, 21, 4, 0x0C8, false, 4), BASE);
+    check_eq(f32_to_bits((f32)cpu->fpr[21]), 0xC1C80000u, "psq_l s16 scaled ps0");
+    check_eq(f32_to_bits((f32)cpu->ps1[21]), 0x41C80000u, "psq_l s16 scaled ps1");
+
+    cpu->fpr[21] = 100.75;
+    cpu->ps1[21] = -10000.0;
+    exec_raw(cpu, make_psq_dform(60, 21, 4, 0x0CC, false, 4), BASE);
+    check_eq(mem_read16(cpu, base + 0xCC), 403, "psq_st s16 truncates");
+    check_eq(mem_read16(cpu, base + 0xCE), 0x8000u, "psq_st s16 clamps low");
+
+    cpu->fpr[22] = f32_from_bits(0x7FC00000u);
+    cpu->ps1[22] = f32_from_bits(0xFF800000u);
+    exec_raw(cpu, make_psq_dform(60, 22, 4, 0x0D0, false, 3), BASE);
+    check_eq(mem_read8(cpu, base + 0xD0), 0x7F, "psq_st NaN becomes positive overflow");
+    check_eq(mem_read8(cpu, base + 0xD1), 0x80, "psq_st negative infinity clamps low");
+
+    cpu->gqr[0] = 0;
+    cpu->fpr[23] = f32_from_bits(0x00000001u);
+    exec_raw(cpu, make_psq_dform(60, 23, 4, 0x0D4, true, 0), BASE);
+    check_eq(mem_read32(cpu, base + 0xD4), 0, "psq_st f32 denorm stores zero");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->hid2 = 0;
+    exec_raw(cpu, make_psq_dform(56, 24, 4, 0x0B0, false, 1), BASE);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "psq_l without PSE raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "psq_l without PSE is illegal");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->hid2 = PPC_HID2_PSE;
+    exec_raw(cpu, make_psq_dform(56, 24, 4, 0x0B0, false, 1), BASE);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "psq_l without LSQE raises program");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->hid2 = PPC_HID2_PSE | PPC_HID2_LSQE;
+    cpu->gqr[0] = 0;
+    exec_raw(cpu, make_psq_dform(56, 24, 4, 1, true, 0), BASE);
+    check_eq(cpu->exception & PPC_EXC_ALIGNMENT, PPC_EXC_ALIGNMENT, "psq_l f32 unaligned raises alignment");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->gqr[1] = (4u << 16) | 4u;
+    exec_raw(cpu, make_psq_dform(56, 24, 4, 1, true, 1), BASE);
+    check_eq(cpu->exception, 0, "psq_l integer unaligned allowed");
 }
 
 static void test_paired_single_arithmetic(CPUState* cpu) {
@@ -2823,6 +2916,12 @@ static void test_new_opcodes(CPUState* cpu) {
     cpu->gpr[10] = 0x00001000u;
     exec_raw(cpu, 0x7D400124, BASE);
     check_eq(cpu->msr, 0x00001000u, "mtmsr writes MSR");
+
+    cpu->gpr[10] = 0x01040104u;
+    exec_raw(cpu, make_xfx(467, 10, 913), BASE);
+    exec_raw(cpu, make_xfx(339, 11, 913), BASE);
+    check_eq(cpu->gqr[1], 0x01040104u, "mtspr writes GQR");
+    check_eq(cpu->gpr[11], 0x01040104u, "mfspr reads GQR");
 
     cpu->sr[3] = 0x33330003u;
     exec_raw(cpu, 0x7D6304A6, BASE);

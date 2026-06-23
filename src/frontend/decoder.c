@@ -1086,6 +1086,14 @@ static const char* spr_name(u16 spr) {
     case 26: return "srr0";
     case 27: return "srr1";
     case 282: return "ear";
+    case 912: return "gqr0";
+    case 913: return "gqr1";
+    case 914: return "gqr2";
+    case 915: return "gqr3";
+    case 916: return "gqr4";
+    case 917: return "gqr5";
+    case 918: return "gqr6";
+    case 919: return "gqr7";
     case 920: return "hid2";
     default: return NULL;
     }

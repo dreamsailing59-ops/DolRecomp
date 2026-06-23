@@ -28,6 +28,12 @@
 #define PPC_VECTOR_PROGRAM       0x00700u
 #define PPC_VECTOR_SYSTEM_CALL   0x00C00u
 
+#define PPC_HID2_LSQE   0x80000000u
+#define PPC_HID2_PSE    0x20000000u
+#define PPC_HID2_LCE    0x10000000u
+#define PPC_HID2_DCHERR 0x00800000u
+#define PPC_HID2_DCHEE  0x00080000u
+
 typedef struct CPUState CPUState;
 typedef u32 (*PPCExternalRead32)(CPUState* cpu, u32 ea, u8 rid);
 typedef void (*PPCExternalWrite32)(CPUState* cpu, u32 ea, u32 value, u8 rid);
@@ -51,6 +57,7 @@ struct CPUState {
     u32 hid2;
     u64 timebase;
     u32 sr[16];
+    u32 gqr[8];
     u32 exception;
     u32 program_exception;
     u32 tlb_last_vps;
@@ -105,6 +112,8 @@ void ppc_alignment_exception(CPUState* cpu, u32 ea, u32 cia);
 u32 ppc_mftb(CPUState* cpu, u16 tbr, u32 cia);
 void ppc_rfi(CPUState* cpu, u32 cia);
 void ppc_dcbz_l(CPUState* cpu, u32 ea, u32 cia);
+void ppc_psq_load(CPUState* cpu, u8 frD, u32 ea, bool w, u8 gqr, bool indexed, u32 cia);
+void ppc_psq_store(CPUState* cpu, u8 frS, u32 ea, bool w, u8 gqr, bool indexed, u32 cia);
 u32 ppc_eciwx(CPUState* cpu, u32 ea, u32 cia);
 void ppc_ecowx(CPUState* cpu, u32 ea, u32 value, u32 cia);
 void ppc_tlbie(CPUState* cpu, u32 ea, u32 cia);

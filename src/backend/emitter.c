@@ -226,13 +226,6 @@ static void emit_fstorex(FILE* out, const PPCInst* inst, bool single,
     fprintf(out, "    }\n");
 }
 
-static void emit_psq_quant_note(FILE* out, const PPCInst* inst) {
-    if (inst->i != 0) {
-        fprintf(out, "        // TODO: psq quantization via GQR%u; treating memory as f32 for now\n",
-                inst->i);
-    }
-}
-
 static void emit_psq_load(FILE* out, const PPCInst* inst, bool indexed,
                           bool update) {
     fprintf(out, "    {\n");
@@ -243,15 +236,10 @@ static void emit_psq_load(FILE* out, const PPCInst* inst, bool indexed,
         emit_dform_ea(out, inst->rA, inst->simm, update);
     }
     fprintf(out, ";\n");
-    emit_psq_quant_note(out, inst);
-    fprintf(out, "        ctx->fpr[%u] = (f64)dolrecomp_f32_from_bits(mem_read32(ctx, ea));\n",
-            inst->rD);
-    if (inst->w) {
-        fprintf(out, "        ctx->ps1[%u] = 1.0;\n", inst->rD);
-    } else {
-        fprintf(out, "        ctx->ps1[%u] = (f64)dolrecomp_f32_from_bits(mem_read32(ctx, ea + 4));\n",
-                inst->rD);
-    }
+    fprintf(out, "        ppc_psq_load(ctx, %uu, ea, %s, %uu, %s, 0x%08Xu);\n",
+            inst->rD, inst->w ? "true" : "false", inst->i,
+            indexed ? "true" : "false", inst->address);
+    fprintf(out, "        if (ctx->exception) return;\n");
     if (update) {
         fprintf(out, "        ctx->gpr[%u] = ea;\n", inst->rA);
     }
@@ -268,13 +256,10 @@ static void emit_psq_store(FILE* out, const PPCInst* inst, bool indexed,
         emit_dform_ea(out, inst->rA, inst->simm, update);
     }
     fprintf(out, ";\n");
-    emit_psq_quant_note(out, inst);
-    fprintf(out, "        mem_write32(ctx, ea, dolrecomp_f32_to_bits((f32)ctx->fpr[%u]));\n",
-            inst->rS);
-    if (!inst->w) {
-        fprintf(out, "        mem_write32(ctx, ea + 4, dolrecomp_f32_to_bits((f32)ctx->ps1[%u]));\n",
-                inst->rS);
-    }
+    fprintf(out, "        ppc_psq_store(ctx, %uu, ea, %s, %uu, %s, 0x%08Xu);\n",
+            inst->rS, inst->w ? "true" : "false", inst->i,
+            indexed ? "true" : "false", inst->address);
+    fprintf(out, "        if (ctx->exception) return;\n");
     if (update) {
         fprintf(out, "        ctx->gpr[%u] = ea;\n", inst->rA);
     }
@@ -1622,6 +1607,14 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
                     inst->rD, inst->spr, inst->address);
             fprintf(out, "    if (ctx->exception) return;\n");
             break;
+        case 912: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[0];\n", inst->rD); break;
+        case 913: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[1];\n", inst->rD); break;
+        case 914: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[2];\n", inst->rD); break;
+        case 915: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[3];\n", inst->rD); break;
+        case 916: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[4];\n", inst->rD); break;
+        case 917: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[5];\n", inst->rD); break;
+        case 918: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[6];\n", inst->rD); break;
+        case 919: fprintf(out, "    ctx->gpr[%u] = ctx->gqr[7];\n", inst->rD); break;
         case 282: fprintf(out, "    ctx->gpr[%u] = ctx->ear;\n", inst->rD); break;
         case 920: fprintf(out, "    ctx->gpr[%u] = ctx->hid2;\n", inst->rD); break;
         default:
@@ -1639,6 +1632,14 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         case 26: fprintf(out, "    ctx->srr0 = ctx->gpr[%u];\n", inst->rS); break;
         case 27: fprintf(out, "    ctx->srr1 = ctx->gpr[%u];\n", inst->rS); break;
         case 282: fprintf(out, "    ctx->ear = ctx->gpr[%u];\n", inst->rS); break;
+        case 912: fprintf(out, "    ctx->gqr[0] = ctx->gpr[%u];\n", inst->rS); break;
+        case 913: fprintf(out, "    ctx->gqr[1] = ctx->gpr[%u];\n", inst->rS); break;
+        case 914: fprintf(out, "    ctx->gqr[2] = ctx->gpr[%u];\n", inst->rS); break;
+        case 915: fprintf(out, "    ctx->gqr[3] = ctx->gpr[%u];\n", inst->rS); break;
+        case 916: fprintf(out, "    ctx->gqr[4] = ctx->gpr[%u];\n", inst->rS); break;
+        case 917: fprintf(out, "    ctx->gqr[5] = ctx->gpr[%u];\n", inst->rS); break;
+        case 918: fprintf(out, "    ctx->gqr[6] = ctx->gpr[%u];\n", inst->rS); break;
+        case 919: fprintf(out, "    ctx->gqr[7] = ctx->gpr[%u];\n", inst->rS); break;
         case 920: fprintf(out, "    ctx->hid2 = ctx->gpr[%u];\n", inst->rS); break;
         default:
             fprintf(out, "    // TODO: mtspr %u\n", inst->spr);

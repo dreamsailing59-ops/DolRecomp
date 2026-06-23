@@ -157,6 +157,15 @@ static void be_store32(volatile u8* p, u32 value) {
     p[3] = (u8)value;
 }
 
+static void be_store16(volatile u8* p, u16 value) {
+    p[0] = (u8)(value >> 8);
+    p[1] = (u8)value;
+}
+
+static u16 be_load16(const volatile u8* p) {
+    return (u16)((p[0] << 8) | p[1]);
+}
+
 static u32 be_load32(const volatile u8* p) {
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
 }
@@ -1582,6 +1591,62 @@ static void test_psq_memory(void) {
     check_eq(be_load32(&out[0xA0]), 0x41980000u, "psq_stux w0 ps0");
     check_eq(be_load32(&out[0xA4]), 0x41A00000u, "psq_stux w0 ps1");
     check((u32)ptr == (u32)&out[0xA0], "psq_stux updates rA");
+
+    u32 gqr1 = 0x01040104u;
+    asm volatile("mtspr 913,%0" : : "r"(gqr1));
+    mem[0xB0] = 10;
+    mem[0xB1] = 246;
+    asm volatile(
+        "psq_l %0,0(%1),0,1\n\t"
+        "psq_st %0,0(%2),0,0"
+        : "=&f"(pair)
+        : "r"(&mem[0xB0]), "r"(&out[0xB0])
+        : "memory"
+    );
+    check_eq(be_load32(&out[0xB0]), 0x40A00000u, "psq_l u8 scale ps0");
+    check_eq(be_load32(&out[0xB4]), 0x42F60000u, "psq_l u8 scale ps1");
+
+    be_store32(&mem[0xB8], 0x40B80000u);
+    be_store32(&mem[0xBC], 0x43484000u);
+    asm volatile(
+        "psq_l %0,0(%1),0,0\n\t"
+        "psq_st %0,0(%2),0,1"
+        : "=&f"(pair)
+        : "r"(&mem[0xB8]), "r"(&out[0xB8])
+        : "memory"
+    );
+    check_eq(out[0xB8], 11, "psq_st u8 truncates");
+    check_eq(out[0xB9], 255, "psq_st u8 clamps high");
+
+    u32 gqr4 = 0x02070207u;
+    asm volatile("mtspr 916,%0" : : "r"(gqr4));
+    be_store16(&mem[0xC8], 0xFF9Cu);
+    be_store16(&mem[0xCA], 0x0064u);
+    asm volatile(
+        "psq_l %0,0(%1),0,4\n\t"
+        "psq_st %0,0(%2),0,0"
+        : "=&f"(pair)
+        : "r"(&mem[0xC8]), "r"(&out[0xC8])
+        : "memory"
+    );
+    check_eq(be_load32(&out[0xC8]), 0xC1C80000u, "psq_l s16 scaled ps0");
+    check_eq(be_load32(&out[0xCC]), 0x41C80000u, "psq_l s16 scaled ps1");
+
+    be_store32(&mem[0xD0], 0x42C98000u);
+    be_store32(&mem[0xD4], 0xC61C4000u);
+    asm volatile(
+        "psq_l %0,0(%1),0,0\n\t"
+        "psq_st %0,0(%2),0,4"
+        : "=&f"(pair)
+        : "r"(&mem[0xD0]), "r"(&out[0xD0])
+        : "memory"
+    );
+    check_eq(be_load16(&out[0xD0]), 403, "psq_st s16 truncates");
+    check_eq(be_load16(&out[0xD2]), 0x8000u, "psq_st s16 clamps low");
+
+    gqr1 = 0;
+    gqr4 = 0;
+    asm volatile("mtspr 913,%0\n\tmtspr 916,%1" : : "r"(gqr1), "r"(gqr4));
 }
 
 static void test_paired_single_arithmetic(void) {

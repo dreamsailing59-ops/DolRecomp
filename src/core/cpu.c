@@ -76,10 +76,6 @@ static void clear_matching_reservation(CPUState* cpu, u32 addr) {
 #define PPC_MSR_RI  PPC_BIT(30)
 #define PPC_MSR_LE  PPC_BIT(31)
 
-#define PPC_HID2_LCE    PPC_BIT(3)
-#define PPC_HID2_DCHERR PPC_BIT(8)
-#define PPC_HID2_DCHEE  PPC_BIT(12)
-
 #define PPC_EAR_ENABLE 0x80000000u
 #define PPC_SRR1_MACHINE_CHECK_DCBZL PPC_BIT(10)
 
@@ -224,6 +220,155 @@ u32 ppc_mftb(CPUState* cpu, u16 tbr, u32 cia) {
 
     ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
     return 0;
+}
+
+static f32 f32_value(u32 bits) {
+    f32 value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+static u32 f32_bits(f32 value) {
+    u32 bits;
+    memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+static bool f32_is_denormal(f32 value) {
+    u32 bits = f32_bits(value);
+    return (bits & 0x7F800000u) == 0 && (bits & 0x007FFFFFu) != 0;
+}
+
+static s32 gqr_scale(u32 value) {
+    return sign_extend(value & 0x3Fu, 6);
+}
+
+static u32 psq_type_size(u8 type) {
+    switch (type) {
+    case 0: return 4;
+    case 4:
+    case 6: return 1;
+    case 5:
+    case 7: return 2;
+    default: return 0;
+    }
+}
+
+static bool psq_access_is_valid(CPUState* cpu, u8 type, u32 ea, u32 cia) {
+    if (psq_type_size(type) == 0) {
+        ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
+        return false;
+    }
+
+    if (type == 0 && (ea & 3u) != 0) {
+        ppc_alignment_exception(cpu, ea, cia);
+        return false;
+    }
+
+    return true;
+}
+
+static f64 psq_load_value(CPUState* cpu, u32 ea, u8 type, s32 scale) {
+    switch (type) {
+    case 0:
+        return (f64)f32_value(mem_read32(cpu, ea));
+    case 4:
+        return (f64)(f32)ldexp((f64)mem_read8(cpu, ea), -scale);
+    case 5:
+        return (f64)(f32)ldexp((f64)mem_read16(cpu, ea), -scale);
+    case 6:
+        return (f64)(f32)ldexp((f64)(s8)mem_read8(cpu, ea), -scale);
+    case 7:
+        return (f64)(f32)ldexp((f64)(s16)mem_read16(cpu, ea), -scale);
+    default:
+        return 0.0;
+    }
+}
+
+static s64 psq_quantize_int(f64 value, s64 min_value, s64 max_value, s32 scale) {
+    if (isnan(value))
+        return max_value;
+    if (isinf(value))
+        return value < 0.0 ? min_value : max_value;
+
+    f64 scaled = trunc(ldexp(value, scale));
+    if (scaled <= (f64)min_value)
+        return min_value;
+    if (scaled >= (f64)max_value)
+        return max_value;
+    return (s64)scaled;
+}
+
+static void psq_store_value(CPUState* cpu, u32 ea, u8 type, s32 scale, f64 value) {
+    switch (type) {
+    case 0: {
+        f32 single = (f32)value;
+        mem_write32(cpu, ea, f32_is_denormal(single) ? 0u : f32_bits(single));
+        break;
+    }
+    case 4:
+        mem_write8(cpu, ea, (u8)psq_quantize_int(value, 0, 255, scale));
+        break;
+    case 5:
+        mem_write16(cpu, ea, (u16)psq_quantize_int(value, 0, 65535, scale));
+        break;
+    case 6:
+        mem_write8(cpu, ea, (u8)(s8)psq_quantize_int(value, -128, 127, scale));
+        break;
+    case 7:
+        mem_write16(cpu, ea, (u16)(s16)psq_quantize_int(value, -32768, 32767, scale));
+        break;
+    }
+}
+
+static bool psq_check_enabled(CPUState* cpu, bool indexed, u32 cia) {
+    if ((cpu->hid2 & PPC_HID2_PSE) == 0 || (!indexed && (cpu->hid2 & PPC_HID2_LSQE) == 0)) {
+        ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
+        return false;
+    }
+    return true;
+}
+
+void ppc_psq_load(CPUState* cpu, u8 frD, u32 ea, bool w, u8 gqr_index, bool indexed, u32 cia) {
+    if (!psq_check_enabled(cpu, indexed, cia))
+        return;
+
+    u32 gqr = cpu->gqr[gqr_index & 7u];
+    s32 scale = gqr_scale(gqr >> 24);
+    u8 type = (u8)((gqr >> 16) & 7u);
+    u32 size = psq_type_size(type);
+    if (!psq_access_is_valid(cpu, type, ea, cia))
+        return;
+
+    cpu->fpr[frD] = psq_load_value(cpu, ea, type, scale);
+    if (w) {
+        cpu->ps1[frD] = 1.0;
+    } else {
+        u32 ps1_ea = ea + size;
+        if (!psq_access_is_valid(cpu, type, ps1_ea, cia))
+            return;
+        cpu->ps1[frD] = psq_load_value(cpu, ps1_ea, type, scale);
+    }
+}
+
+void ppc_psq_store(CPUState* cpu, u8 frS, u32 ea, bool w, u8 gqr_index, bool indexed, u32 cia) {
+    if (!psq_check_enabled(cpu, indexed, cia))
+        return;
+
+    u32 gqr = cpu->gqr[gqr_index & 7u];
+    s32 scale = gqr_scale(gqr >> 8);
+    u8 type = (u8)(gqr & 7u);
+    u32 size = psq_type_size(type);
+    if (!psq_access_is_valid(cpu, type, ea, cia))
+        return;
+
+    psq_store_value(cpu, ea, type, scale, cpu->fpr[frS]);
+    if (!w) {
+        u32 ps1_ea = ea + size;
+        if (!psq_access_is_valid(cpu, type, ps1_ea, cia))
+            return;
+        psq_store_value(cpu, ps1_ea, type, scale, cpu->ps1[frS]);
+    }
 }
 
 void ppc_rfi(CPUState* cpu, u32 cia) {
