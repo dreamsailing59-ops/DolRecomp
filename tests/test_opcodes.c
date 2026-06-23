@@ -194,6 +194,36 @@ static const OpcodeDecode opcode_cases[] = {
     { 0x7D2A5816, PPC_OP_MULHWU, "mulhwu" },
     { 0x7D8D73D6, PPC_OP_DIVW, "divw" },
     { 0x7DF08B96, PPC_OP_DIVWU, "divwu" },
+    { 0x7C6401D4, PPC_OP_ADDME, "addme" },
+    { 0x7CA601D0, PPC_OP_SUBFME, "subfme" },
+    { 0x7CEC6CAA, PPC_OP_LSWI, "lswi" },
+    { 0x7D34AC2A, PPC_OP_LSWX, "lswx" },
+    { 0x7D8D8DAA, PPC_OP_STSWI, "stswi" },
+    { 0x7DCF852A, PPC_OP_STSWX, "stswx" },
+    { 0x7E329828, PPC_OP_LWARX, "lwarx" },
+    { 0x7E95B12D, PPC_OP_STWCX, "stwcx." },
+    { 0x7EF8CFAE, PPC_OP_STFIWX, "stfiwx" },
+    { 0xEC201030, PPC_OP_FRES, "fres" },
+    { 0xFC602034, PPC_OP_FRSQRTE, "frsqrte" },
+    { 0x10A03030, PPC_OP_PS_RES, "ps_res" },
+    { 0x10E04034, PPC_OP_PS_RSQRTE, "ps_rsqrte" },
+    { 0xFD20501C, PPC_OP_FCTIW, "fctiw" },
+    { 0xFD60601E, PPC_OP_FCTIWZ, "fctiwz" },
+    { 0xFDAE83FA, PPC_OP_FMADD, "fmadd" },
+    { 0xEE32A4FA, PPC_OP_FMADDS, "fmadds" },
+    { 0xFEB6C5F8, PPC_OP_FMSUB, "fmsub" },
+    { 0xEF3AE6F8, PPC_OP_FMSUBS, "fmsubs" },
+    { 0xFFBE07FE, PPC_OP_FNMADD, "fnmadd" },
+    { 0xEC2220FE, PPC_OP_FNMADDS, "fnmadds" },
+    { 0xFCA641FC, PPC_OP_FNMSUB, "fnmsub" },
+    { 0xED2A62FC, PPC_OP_FNMSUBS, "fnmsubs" },
+    { 0xFDA0048E, PPC_OP_MFFS, "mffs" },
+    { 0xFD0C0080, PPC_OP_MCRFS, "mcrfs" },
+    { 0xFE00A10C, PPC_OP_MTFSFI, "mtfsfi" },
+    { 0xFCB4758E, PPC_OP_MTFSF, "mtfsf" },
+    { 0x7C0004AC, PPC_OP_SYNC, "sync" },
+    { 0x7C0006AC, PPC_OP_EIEIO, "eieio" },
+    { 0x4C00012C, PPC_OP_ISYNC, "isync" },
 };
 
 static u32 make_dform(u32 opcd, u32 rt, u32 ra, u16 imm) {
@@ -218,21 +248,24 @@ static int test_sign_extend(void) {
 }
 
 static int test_current_opcode_count(void) {
-    printf("  current opcode count is 169\n");
-    CHECK(PPC_OP_COUNT - 1 == 169, "should expose 169 opcodes, got %d", PPC_OP_COUNT - 1);
+    printf("  current opcode count is 199\n");
+    CHECK(PPC_OP_COUNT - 1 == 199, "should expose 199 opcodes, got %d", PPC_OP_COUNT - 1);
     return 1;
 }
 
 static int test_current_opcode_decode_table(void) {
     int count = (int)(sizeof(opcode_cases) / sizeof(opcode_cases[0]));
-    printf("  decode every opcode in the current 169-opcode set\n");
+    printf("  decode every opcode in the current 199-opcode set\n");
 
-    CHECK(count == 169, "opcode table should have 169 entries, got %d", count);
+    CHECK(count == 199, "opcode table should have 199 entries, got %d", count);
 
     for (int i = 0; i < count; i++) {
+        char disasm[96];
         PPCInst inst = ppc_decode(opcode_cases[i].raw, BASE + (u32)(i * 4));
         CHECK(inst.op == opcode_cases[i].op, "%s decoded as %s",
               opcode_cases[i].name, ppc_op_name(inst.op));
+        ppc_disasm(disasm, sizeof(disasm), &inst);
+        CHECK(strncmp(disasm, ".long", 5) != 0, "%s has no disassembly", opcode_cases[i].name);
     }
 
     return 1;
@@ -415,6 +448,33 @@ static int test_unknown_opcode(void) {
     return 1;
 }
 
+static int test_invalid_new_forms(void) {
+    static const u32 invalid[] = {
+        0x7C6409D4u, /* addme with reserved rB */
+        0x7E329829u, /* lwarx with Rc */
+        0x7E95B12Cu, /* stwcx without Rc */
+        0xEC211030u, /* fres with reserved rA */
+        0xEC201070u, /* fres with reserved bits 21-25 */
+        0xFD21501Cu, /* fctiw with reserved rA */
+        0xFC612034u, /* frsqrte with reserved rA */
+        0xFDA1048Eu, /* mffs with reserved rA */
+        0xFD2C0080u, /* mcrfs with reserved bit 21 */
+        0xFE01A10Cu, /* mtfsfi with reserved bit 16 */
+        0xFCB5758Eu, /* mtfsf with reserved bit 16 */
+        0x7C2004ACu, /* sync with reserved rD */
+        0x7C0106ACu, /* eieio with reserved rA */
+        0x4C20012Cu, /* isync with reserved rD */
+    };
+
+    printf("  invalid forms stay unknown\n");
+    for (u32 i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        PPCInst inst = ppc_decode(invalid[i], BASE);
+        CHECK(inst.op == PPC_OP_UNKNOWN, "invalid 0x%08X decoded as %s",
+              invalid[i], ppc_op_name(inst.op));
+    }
+    return 1;
+}
+
 typedef int (*test_fn)(void);
 
 typedef struct {
@@ -430,6 +490,7 @@ static TestCase all_tests[] = {
     { "field edges", test_field_edges },
     { "branch edges", test_branch_edges },
     { "unknown opcode", test_unknown_opcode },
+    { "invalid new forms", test_invalid_new_forms },
 };
 
 int main(void) {

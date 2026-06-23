@@ -19,6 +19,8 @@ typedef struct {
     u32 cr;
     u32 xer;
     u32 fpscr;
+    u32 reserve_addr;
+    bool reserve_valid;
 
     u8* ram;
     u32 ram_size;
@@ -36,5 +38,17 @@ u16  mem_read16(CPUState* cpu, u32 addr);
 void mem_write16(CPUState* cpu, u32 addr, u16 value);
 u8   mem_read8(CPUState* cpu, u32 addr);
 void mem_write8(CPUState* cpu, u32 addr, u8 value);
+
+f64 ppc_approx_reciprocal(f64 value);
+f64 ppc_approx_rsqrt(f64 value);
+bool ppc_fres(CPUState* cpu, f64 value, f64* result);
+bool ppc_frsqrte(CPUState* cpu, f64 value, f64* result);
+void ppc_ps_res(CPUState* cpu, f64 a, f64 b, f64* result_a, f64* result_b);
+void ppc_ps_rsqrte(CPUState* cpu, f64 a, f64 b, f64* result_a, f64* result_b);
+bool ppc_fma(CPUState* cpu, f64 a, f64 c, f64 b, bool single,
+             bool subtract, bool negative, f64* output);
+bool ppc_fctiw(CPUState* cpu, f64 value, bool toward_zero, u64* result);
+void ppc_fpscr_updated(CPUState* cpu);
+void ppc_memory_fence(void);
 
 #endif /* DOLRECOMP_CPU_H */

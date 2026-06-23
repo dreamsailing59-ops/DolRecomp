@@ -161,5 +161,37 @@ psq_lux f11, r4, r5, 0, 0
 psq_stx f13, r4, r5, 0, 0
 psq_stux f15, r4, r5, 0, 0
 
+# --- arithmetic, string/atomic, FPSCR, and ordering ---
+addme r3, r4
+subfme r5, r6
+lswi r7, r12, 13
+lswx r9, r20, r21
+stswi r12, r13, 17
+stswx r14, r15, r16
+lwarx r17, r18, r19
+stwcx. r20, r21, r22
+stfiwx f23, r24, r25
+fres f1, f2
+frsqrte f3, f4
+ps_res f5, f6
+ps_rsqrte f7, f8
+fctiw f9, f10
+fctiwz f11, f12
+fmadd f13, f14, f15, f16
+fmadds f17, f18, f19, f20
+fmsub f21, f22, f23, f24
+fmsubs f25, f26, f27, f28
+fnmadd f29, f30, f31, f0
+fnmadds f1, f2, f3, f4
+fnmsub f5, f6, f7, f8
+fnmsubs f9, f10, f11, f12
+mffs f13
+mcrfs cr2, cr3
+mtfsfi 4, 10
+mtfsf 0x5a, f14
+sync
+eieio
+isync
+
 branch_target:
 nop

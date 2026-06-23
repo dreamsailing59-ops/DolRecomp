@@ -60,10 +60,12 @@ typedef enum {
     PPC_OP_ADD,
     PPC_OP_ADDC,
     PPC_OP_ADDE,
+    PPC_OP_ADDME,
     PPC_OP_ADDZE,
     PPC_OP_SUBF,
     PPC_OP_SUBFC,
     PPC_OP_SUBFE,
+    PPC_OP_SUBFME,
     PPC_OP_SUBFZE,
     PPC_OP_NEG,
     PPC_OP_AND,
@@ -102,6 +104,13 @@ typedef enum {
     PPC_OP_STHUX,
     PPC_OP_STWBRX,
     PPC_OP_STHBRX,
+    PPC_OP_LSWI,
+    PPC_OP_LSWX,
+    PPC_OP_STSWI,
+    PPC_OP_STSWX,
+    PPC_OP_LWARX,
+    PPC_OP_STWCX,
+    PPC_OP_STFIWX,
     PPC_OP_LFS,
     PPC_OP_LFSU,
     PPC_OP_LFD,
@@ -122,10 +131,22 @@ typedef enum {
     PPC_OP_FSUBS,
     PPC_OP_FMULS,
     PPC_OP_FDIVS,
+    PPC_OP_FRES,
+    PPC_OP_FMADDS,
+    PPC_OP_FMSUBS,
+    PPC_OP_FNMADDS,
+    PPC_OP_FNMSUBS,
     PPC_OP_FADD,
     PPC_OP_FSUB,
     PPC_OP_FMUL,
     PPC_OP_FDIV,
+    PPC_OP_FRSQRTE,
+    PPC_OP_FMADD,
+    PPC_OP_FMSUB,
+    PPC_OP_FNMADD,
+    PPC_OP_FNMSUB,
+    PPC_OP_FCTIW,
+    PPC_OP_FCTIWZ,
     PPC_OP_FMR,
     PPC_OP_FNEG,
     PPC_OP_FABS,
@@ -136,6 +157,10 @@ typedef enum {
     PPC_OP_FCMPO,
     PPC_OP_MTFSB0,
     PPC_OP_MTFSB1,
+    PPC_OP_MCRFS,
+    PPC_OP_MFFS,
+    PPC_OP_MTFSF,
+    PPC_OP_MTFSFI,
     PPC_OP_PSQ_L,
     PPC_OP_PSQ_LU,
     PPC_OP_PSQ_ST,
@@ -148,6 +173,8 @@ typedef enum {
     PPC_OP_PS_SUB,
     PPC_OP_PS_MUL,
     PPC_OP_PS_DIV,
+    PPC_OP_PS_RES,
+    PPC_OP_PS_RSQRTE,
     PPC_OP_PS_MADD,
     PPC_OP_PS_MSUB,
     PPC_OP_PS_NMADD,
@@ -177,6 +204,9 @@ typedef enum {
     PPC_OP_DIVW,
     PPC_OP_DIVWU,
     PPC_OP_DCBZ,
+    PPC_OP_SYNC,
+    PPC_OP_EIEIO,
+    PPC_OP_ISYNC,
     PPC_OP_COUNT
 } PPCOpcode;
 
@@ -193,6 +223,9 @@ typedef struct {
     u8  crfD;
     u8  crfS;
     u8  crm;
+    u8  fm;
+    u8  imm;
+    u8  nb;
     u8  l;
     u8  w;
     u8  i;
@@ -208,6 +241,7 @@ typedef struct {
     bool aa;
     bool lk;
     bool rc;
+    bool oe;
 } PPCInst;
 
 // decode a single instruction (raw = host endian)

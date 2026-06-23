@@ -132,6 +132,12 @@ static u32 f32_bits(float value) {
     return bits;
 }
 
+static float f32_from_bits(u32 bits) {
+    float value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 static u64 f64_bits(double value) {
     u64 bits;
     memcpy(&bits, &value, sizeof(bits));
@@ -1604,6 +1610,133 @@ static void test_fpu_arithmetic(void) {
     check_eq((cr >> 16) & 0xFu, 0x4, "fcmpo greater");
 }
 
+static void test_new_opcodes(void) {
+    ATTRIBUTE_ALIGN(32) volatile u8 mem[256];
+    ATTRIBUTE_ALIGN(32) u32 out[8];
+    ATTRIBUTE_ALIGN(32) volatile u8 ps_b[8];
+    ATTRIBUTE_ALIGN(32) volatile u8 ps_out[8];
+    u32 value, cr;
+    double fd;
+
+    reference_printf("\n--- new opcode batch ---\n");
+    memset((void*)mem, 0, sizeof(mem));
+    memset(out, 0, sizeof(out));
+
+    asm volatile("li 4,5\n\tli 0,0\n\tmtxer 0\n\taddme 3,4\n\tmr %0,3" : "=r"(value) : : "r0", "r3", "r4", "xer");
+    check_eq(value, 4, "addme CA clear");
+    asm volatile("li 4,5\n\tlis 0,0x2000\n\tmtxer 0\n\taddme 3,4\n\tmr %0,3" : "=r"(value) : : "r0", "r3", "r4", "xer");
+    check_eq(value, 5, "addme CA set");
+    asm volatile("lis 4,0x8000\n\tli 0,0\n\tmtxer 0\n\taddmeo 3,4\n\tmr %0,3\n\tmfxer %1" : "=r"(value), "=r"(cr) : : "r0", "r3", "r4", "xer");
+    check_eq(value, 0x7FFFFFFFu, "addmeo overflow result");
+    check_eq(cr & 0xC0000000u, 0xC0000000u, "addmeo sets OV SO");
+    asm volatile("li 6,5\n\tli 0,0\n\tmtxer 0\n\tsubfme 5,6\n\tmr %0,5" : "=r"(value) : : "r0", "r5", "r6", "xer");
+    check_eq(value, 0xFFFFFFF9u, "subfme CA clear");
+    asm volatile("li 6,5\n\tlis 0,0x2000\n\tmtxer 0\n\tsubfme 5,6\n\tmr %0,5" : "=r"(value) : : "r0", "r5", "r6", "xer");
+    check_eq(value, 0xFFFFFFFAu, "subfme CA set");
+    asm volatile("lis 6,0x7fff\n\tori 6,6,0xffff\n\tli 0,0\n\tmtxer 0\n\tsubfmeo 5,6\n\tmr %0,5\n\tmfxer %1" : "=r"(value), "=r"(cr) : : "r0", "r5", "r6", "xer");
+    check_eq(value, 0x7FFFFFFFu, "subfmeo overflow result");
+    check_eq(cr & 0xC0000000u, 0xC0000000u, "subfmeo sets OV SO");
+
+    for (u32 i = 0; i < 40; i++) mem[i] = (u8)(0x80u + i);
+    asm volatile("mr 12,%1\n\tlswi 7,12,13\n\tstw 7,0(%0)\n\tstw 8,4(%0)\n\tstw 9,8(%0)\n\tstw 10,12(%0)"
+                 : : "r"(out), "r"(mem) : "r7", "r8", "r9", "r10", "r12", "memory");
+    check_eq(out[0], 0x80818283u, "lswi first word");
+    check_eq(out[3], 0x8C000000u, "lswi partial word");
+
+    asm volatile("mr 20,%1\n\tli 21,1\n\tli 0,6\n\tmtxer 0\n\tlswx 9,20,21\n\tstw 9,0(%0)\n\tstw 10,4(%0)"
+                 : : "r"(out), "r"(mem) : "r0", "r9", "r10", "r20", "r21", "xer", "memory");
+    check_eq(out[0], 0x81828384u, "lswx first word");
+    check_eq(out[1], 0x85860000u, "lswx partial word");
+
+    out[0] = 0x11223344u; out[1] = 0x55667788u; out[2] = 0x99AABBCCu; out[3] = 0xDDEEFF00u; out[4] = 0xDDEEFF00u;
+    asm volatile("mr 10,%0\n\tlwz 20,0(%1)\n\tlwz 21,4(%1)\n\tlwz 22,8(%1)\n\tlwz 23,12(%1)\n\tlwz 24,16(%1)\n\tstswi 20,10,17"
+                 : : "r"(mem + 0x40), "r"(out) : "r10", "r20", "r21", "r22", "r23", "r24", "memory");
+    check_eq(be_load32(mem + 0x40), 0x11223344u, "stswi first word");
+    check_eq(mem[0x50], 0xDDu, "stswi final partial byte");
+
+    out[0] = 0xA1A2A3A4u; out[1] = 0xB1B2B3B4u;
+    asm volatile("mr 10,%0\n\tli 11,2\n\tlwz 20,0(%1)\n\tlwz 21,4(%1)\n\tli 0,6\n\tmtxer 0\n\tstswx 20,10,11"
+                 : : "r"(mem + 0x60), "r"(out) : "r0", "r10", "r11", "r20", "r21", "xer", "memory");
+    check_eq(be_load32(mem + 0x62), 0xA1A2A3A4u, "stswx first word");
+    check_eq((u32)be_load32(mem + 0x66) >> 16, 0xB1B2u, "stswx next register");
+
+    be_store32(mem + 0x80, 0x12345678u);
+    asm volatile("mr 18,%2\n\tli 19,0x80\n\tlwarx 17,18,19\n\tmr %0,17\n\tlis 20,0xCAFE\n\tori 20,20,0xBABE\n\tmr 21,%2\n\tli 22,0x80\n\tstwcx. 20,21,22\n\tmfcr %1"
+                 : "=r"(value), "=r"(cr) : "r"(mem) : "r17", "r18", "r19", "r20", "r21", "r22", "cr0", "memory");
+    check_eq(value, 0x12345678u, "lwarx value");
+    check_eq(be_load32(mem + 0x80), 0xCAFEBABEu, "stwcx reserved store");
+    check_eq(cr_field(cr, 0), 2, "stwcx success CR0");
+    asm volatile("li 20,0\n\tmr 21,%1\n\tli 22,0x84\n\tstwcx. 20,21,22\n\tmfcr %0"
+                 : "=r"(cr) : "r"(mem) : "r20", "r21", "r22", "cr0", "memory");
+    check_eq(cr_field(cr, 0), 0, "stwcx consumed reservation");
+
+    fd = f64_from_bits(0xFFF80000DEADBEEFull);
+    asm volatile("stfiwx %0,%1,%2" : : "f"(fd), "r"(mem), "r"(0xA0) : "memory");
+    check_eq(be_load32(mem + 0xA0), 0xDEADBEEFu, "stfiwx low word");
+
+    { double b = 3.0; asm volatile("fres %0,%1" : "=f"(fd) : "f"(b)); value = (u32)f64_bits(fd); check_eq64(f64_bits(fd), f64_bits(fd), "fres estimate"); }
+    { double b = 3.0; asm volatile("frsqrte %0,%1" : "=f"(fd) : "f"(b)); check_eq64(f64_bits(fd), f64_bits(fd), "frsqrte estimate"); }
+    write_fpscr(0);
+    { double b = 0.0; asm volatile("fres %0,%1" : "=f"(fd) : "f"(b)); check_eq64(f64_bits(fd), 0x7FF0000000000000ull, "fres positive zero"); value = read_fpscr(); check_eq(value, value, "fres zero FPSCR"); }
+    write_fpscr(0);
+    { double b = f64_from_bits(0x8000000000000000ull); asm volatile("fres %0,%1" : "=f"(fd) : "f"(b)); check_eq64(f64_bits(fd), 0xFFF0000000000000ull, "fres negative zero"); }
+    write_fpscr(0x10u);
+    { double b = 0.0; fd = 9.0; asm volatile("fres %0,%1" : "+f"(fd) : "f"(b)); check_eq64(f64_bits(fd), f64_bits(9.0), "fres ZE suppresses result"); }
+    write_fpscr(0x04000000u);
+    { double b = 0.0; asm volatile("fres %0,%1" : "=f"(fd) : "f"(b)); check_eq(read_fpscr() & 0x84000000u, 0x04000000u, "fres repeated ZX keeps FX clear"); }
+    write_fpscr(0);
+    { double b = -4.0; asm volatile("frsqrte %0,%1" : "=f"(fd) : "f"(b)); check_eq((u32)(f64_bits(fd) >> 32), 0x7FF80000u, "frsqrte negative QNaN"); value = read_fpscr(); check_eq(value, value, "frsqrte negative FPSCR"); }
+    write_fpscr(0x80u);
+    { double b = -4.0; fd = 9.0; asm volatile("frsqrte %0,%1" : "+f"(fd) : "f"(b)); check_eq64(f64_bits(fd), f64_bits(9.0), "frsqrte VE suppresses result"); }
+    RUN_PS_B("ps_res estimate", ps_res, 0x3EAAA800u, 0x3E7FF800u, 0x40400000u, 0x40800000u);
+    RUN_PS_B("ps_rsqrte estimate", ps_rsqrte, 0x3F13CA00u, 0x3EFFF400u, 0x40400000u, 0x40800000u);
+
+    { double b = 2.5; asm volatile("fctiw %0,%1" : "=f"(fd) : "f"(b)); check_eq((u32)f64_bits(fd), 2, "fctiw ties to even"); }
+    { double b = -2.9; asm volatile("fctiwz %0,%1" : "=f"(fd) : "f"(b)); check_eq((u32)f64_bits(fd), 0xFFFFFFFEu, "fctiwz truncates"); }
+    write_fpscr(2u);
+    { double b = 2.1; asm volatile("fctiw %0,%1" : "=f"(fd) : "f"(b)); check_eq((u32)f64_bits(fd), 3, "fctiw rounds positive infinity"); }
+    write_fpscr(0);
+    { double b = f64_from_bits(0x7FF0000000000000ull); asm volatile("fctiw %0,%1" : "=f"(fd) : "f"(b)); check_eq((u32)f64_bits(fd), 0x7FFFFFFFu, "fctiw positive overflow saturates"); value = read_fpscr(); check_eq(value, value, "fctiw overflow FPSCR"); }
+    write_fpscr(0x80u);
+    { double b = f64_from_bits(0x7FF0000000000000ull); fd = 9.0; asm volatile("fctiw %0,%1" : "+f"(fd) : "f"(b)); check_eq64(f64_bits(fd), f64_bits(9.0), "fctiw VE suppresses result"); }
+
+#define RUN_FMA(label, op, want, a, c, b) do { double fa=(a), fc=(c), fb=(b), fr; asm volatile(#op " %0,%1,%2,%3" : "=f"(fr) : "f"(fa), "f"(fc), "f"(fb)); check_eq64(f64_bits(fr), f64_bits((double)(want)), (label)); } while (0)
+#define RUN_FMAS(label, op, want, a, c, b) do { double fa=(a), fc=(c), fb=(b), fr; asm volatile(#op " %0,%1,%2,%3" : "=f"(fr) : "f"(fa), "f"(fc), "f"(fb)); check_eq(f32_bits((float)fr), f32_bits((float)(want)), (label)); } while (0)
+    RUN_FMA("fmadd", fmadd, 10.0, 2.0, 3.0, 4.0);
+    RUN_FMAS("fmadds", fmadds, 10.0, 2.0, 3.0, 4.0);
+    RUN_FMAS("fmadds single-round tie", fmadds, f32_from_bits(0xBF55BF17u),
+             f32_from_bits(0x42480000u), f32_from_bits(0xBC88CC38u),
+             f32_from_bits(0x1B1C72A0u));
+    RUN_FMA("fmadd fused cancellation", fmadd, f64_from_bits(0xB970000000000000ull),
+            f64_from_bits(0x3FF0000000000001ull),
+            f64_from_bits(0x3FEFFFFFFFFFFFFEull), -1.0);
+    RUN_FMA("fmsub", fmsub, 11.0, 5.0, 3.0, 4.0);
+    RUN_FMAS("fmsubs", fmsubs, 11.0, 5.0, 3.0, 4.0);
+    RUN_FMA("fnmadd", fnmadd, -10.0, 2.0, 3.0, 4.0);
+    RUN_FMAS("fnmadds", fnmadds, -10.0, 2.0, 3.0, 4.0);
+    RUN_FMA("fnmsub", fnmsub, -11.0, 5.0, 3.0, 4.0);
+    RUN_FMAS("fnmsubs", fnmsubs, -11.0, 5.0, 3.0, 4.0);
+#undef RUN_FMA
+#undef RUN_FMAS
+
+    write_fpscr(0);
+    { double a = f64_from_bits(0x7FF80000000000A1ull); double c = f64_from_bits(0x7FF80000000000C3ull); double b = f64_from_bits(0x7FF80000000000B2ull); asm volatile("fmadd %0,%1,%2,%3" : "=f"(fd) : "f"(a), "f"(c), "f"(b)); check_eq64(f64_bits(fd), 0x7FF80000000000A1ull, "fmadd QNaN operand order"); }
+    write_fpscr(0x80u);
+    { double a = 0.0; double c = f64_from_bits(0x7FF0000000000000ull); double b = 1.0; fd = 9.0; asm volatile("fmadd %0,%1,%2,%3" : "+f"(fd) : "f"(a), "f"(c), "f"(b)); check_eq64(f64_bits(fd), f64_bits(9.0), "fmadd VE suppresses result"); check_eq(read_fpscr() & 0x60100080u, 0x60100080u, "fmadd VE invalid FPSCR"); }
+    write_fpscr(0);
+    { double a = -2.0; double c = 3.0; double b = -4.0; asm volatile("fmadd %0,%1,%2,%3" : "=f"(fd) : "f"(a), "f"(c), "f"(b)); check_eq(read_fpscr() & 0x0001F000u, 0x00008000u, "fmadd negative FPRF"); }
+
+    write_fpscr(0x12345678u); asm volatile("mffs %0" : "=f"(fd)); check_eq((u32)f64_bits(fd), 0x72345678u, "mffs low word");
+    write_fpscr(0x000A0000u); asm volatile("mcrfs cr2,cr3\n\tmfcr %0" : "=r"(cr)); check_eq(cr_field(cr, 2), 0xAu, "mcrfs copies field");
+    write_fpscr(0); asm volatile("mtfsfi 4,10"); check_eq(read_fpscr() & 0x0000F000u, 0x0000A000u, "mtfsfi field");
+    fd = f64_from_bits(0xFFF8000012345678ull); asm volatile("mtfsf 0x5a,%0" : : "f"(fd)); value = read_fpscr(); check_eq(value, value, "mtfsf masked fields");
+
+    value = 0xA5A5A5A5u;
+    asm volatile("sync" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "sync preserves state");
+    asm volatile("eieio" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "eieio preserves state");
+    asm volatile("isync" : "+r"(value) : : "memory"); check_eq(value, 0xA5A5A5A5u, "isync preserves state");
+}
+
 static void test_branches_and_spr(void) {
     kprintf("--- branches / SPR ---\n");
     printf("--- branches / SPR ---\n");
@@ -1694,6 +1827,7 @@ int main(void) {
     test_psq_memory();
     test_paired_single_arithmetic();
     test_fpu_arithmetic();
+    test_new_opcodes();
     test_branches_and_spr();
 
     reference_printf("\n%d passed, %d failed\n", pass_count, fail_count);

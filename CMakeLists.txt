@@ -50,6 +50,9 @@ add_executable(test_pc_reference
     src/core/cpu.c
 )
 target_include_directories(test_pc_reference PRIVATE src)
+if(NOT MSVC)
+    target_link_libraries(test_pc_reference PRIVATE m)
+endif()
 add_test(NAME pc_reference COMMAND test_pc_reference)
 
 # Generate C for the current opcode set and make sure the host compiler accepts it.

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "../src/core/types.h"
 #include "../src/core/cpu.h"
@@ -392,6 +393,21 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_ADDME: {
+        u32 input = cpu->gpr[inst->rA];
+        bool carry = (cpu->xer & XER_CA) != 0;
+        u64 res = (u64)input + 0xFFFFFFFFull + (carry ? 1u : 0u);
+        cpu->gpr[inst->rD] = (u32)res;
+        set_ca_from_u64(cpu, res);
+        if (inst->oe) {
+            bool ov = !carry && input == 0x80000000u;
+            cpu->xer = (cpu->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);
+            if (ov) cpu->xer |= XER_SO;
+        }
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
     case PPC_OP_ADDZE: {
         u64 res = (u64)cpu->gpr[inst->rA] + ((cpu->xer & XER_CA) ? 1u : 0u);
         cpu->gpr[inst->rD] = (u32)res;
@@ -418,6 +434,21 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
                   ((cpu->xer & XER_CA) ? 1u : 0u);
         cpu->gpr[inst->rD] = (u32)res;
         set_ca_from_u64(cpu, res);
+        if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
+        break;
+    }
+
+    case PPC_OP_SUBFME: {
+        u32 input = cpu->gpr[inst->rA];
+        bool carry = (cpu->xer & XER_CA) != 0;
+        u64 res = (u64)(~input) + 0xFFFFFFFFull + (carry ? 1u : 0u);
+        cpu->gpr[inst->rD] = (u32)res;
+        set_ca_from_u64(cpu, res);
+        if (inst->oe) {
+            bool ov = !carry && input == 0x7FFFFFFFu;
+            cpu->xer = (cpu->xer & ~0x40000000u) | (ov ? 0x40000000u : 0u);
+            if (ov) cpu->xer |= XER_SO;
+        }
         if (inst->rc) set_cr0_from_gpr(cpu, inst->rD);
         break;
     }
@@ -592,6 +623,25 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         cpu->fpr[inst->rD] = (f64)((f32)cpu->fpr[inst->rA] / (f32)cpu->fpr[inst->rB]);
         break;
 
+    case PPC_OP_FRES:
+        { f64 result; if (ppc_fres(cpu, cpu->fpr[inst->rB], &result)) cpu->fpr[inst->rD] = cpu->ps1[inst->rD] = result; }
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_FMADDS:
+    case PPC_OP_FMSUBS:
+    case PPC_OP_FNMADDS:
+    case PPC_OP_FNMSUBS: {
+        bool sub = inst->op == PPC_OP_FMSUBS || inst->op == PPC_OP_FNMSUBS;
+        bool neg = inst->op == PPC_OP_FNMADDS || inst->op == PPC_OP_FNMSUBS;
+        f64 result;
+        if (ppc_fma(cpu, cpu->fpr[inst->rA], cpu->fpr[inst->rC],
+                    cpu->fpr[inst->rB], true, sub, neg, &result))
+            cpu->fpr[inst->rD] = cpu->ps1[inst->rD] = result;
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
     case PPC_OP_FADD:
         cpu->fpr[inst->rD] = cpu->fpr[inst->rA] + cpu->fpr[inst->rB];
         break;
@@ -606,6 +656,33 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
 
     case PPC_OP_FDIV:
         cpu->fpr[inst->rD] = cpu->fpr[inst->rA] / cpu->fpr[inst->rB];
+        break;
+
+    case PPC_OP_FRSQRTE:
+        { f64 result; if (ppc_frsqrte(cpu, cpu->fpr[inst->rB], &result)) cpu->fpr[inst->rD] = result; }
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_FMADD:
+    case PPC_OP_FMSUB:
+    case PPC_OP_FNMADD:
+    case PPC_OP_FNMSUB: {
+        bool sub = inst->op == PPC_OP_FMSUB || inst->op == PPC_OP_FNMSUB;
+        bool neg = inst->op == PPC_OP_FNMADD || inst->op == PPC_OP_FNMSUB;
+        f64 result;
+        if (ppc_fma(cpu, cpu->fpr[inst->rA], cpu->fpr[inst->rC],
+                    cpu->fpr[inst->rB], false, sub, neg, &result))
+            cpu->fpr[inst->rD] = result;
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
+    case PPC_OP_FCTIW:
+    case PPC_OP_FCTIWZ:
+        { u64 result; if (ppc_fctiw(cpu, cpu->fpr[inst->rB],
+                                   inst->op == PPC_OP_FCTIWZ, &result))
+              cpu->fpr[inst->rD] = f64_from_bits(result); }
+        if (inst->rc) set_cr1_from_fpscr(cpu);
         break;
 
     case PPC_OP_FMR:
@@ -648,6 +725,38 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_MFFS:
+        cpu->fpr[inst->rD] = f64_from_bits(0xFFF8000000000000ull | cpu->fpscr);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_MCRFS: {
+        u32 src_shift = 4u * (7u - inst->crfS);
+        u32 field = (cpu->fpscr >> src_shift) & 0xFu;
+        cpu->fpscr &= ~((0xFu << src_shift) & 0x83F80700u);
+        ppc_fpscr_updated(cpu);
+        set_cr_field(cpu, inst->crfD, field);
+        break;
+    }
+
+    case PPC_OP_MTFSFI: {
+        u32 shift = 4u * (7u - inst->crfD);
+        cpu->fpscr = (cpu->fpscr & ~(0xFu << shift)) | ((u32)inst->imm << shift);
+        ppc_fpscr_updated(cpu);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
+    case PPC_OP_MTFSF: {
+        u32 mask = 0;
+        for (u32 i = 0; i < 8; i++) if (inst->fm & (1u << i)) mask |= 0xFu << (i * 4);
+        u32 source = (u32)f64_to_bits(cpu->fpr[inst->rB]);
+        cpu->fpscr = (cpu->fpscr & ~mask) | (source & mask);
+        ppc_fpscr_updated(cpu);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+    }
+
     case PPC_OP_PS_ADD:
         cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] + (f32)cpu->fpr[inst->rB]);
         cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] + (f32)cpu->ps1[inst->rB]);
@@ -669,6 +778,18 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
     case PPC_OP_PS_DIV:
         cpu->fpr[inst->rD] = ps_round((f32)cpu->fpr[inst->rA] / (f32)cpu->fpr[inst->rB]);
         cpu->ps1[inst->rD] = ps_round((f32)cpu->ps1[inst->rA] / (f32)cpu->ps1[inst->rB]);
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_RES:
+        { f64 a, b; ppc_ps_res(cpu, cpu->fpr[inst->rB], cpu->ps1[inst->rB], &a, &b);
+          cpu->fpr[inst->rD] = ps_round(a); cpu->ps1[inst->rD] = ps_round(b); }
+        if (inst->rc) set_cr1_from_fpscr(cpu);
+        break;
+
+    case PPC_OP_PS_RSQRTE:
+        { f64 a, b; ppc_ps_rsqrte(cpu, cpu->fpr[inst->rB], cpu->ps1[inst->rB], &a, &b);
+          cpu->fpr[inst->rD] = ps_round(a); cpu->ps1[inst->rD] = ps_round(b); }
         if (inst->rc) set_cr1_from_fpscr(cpu);
         break;
 
@@ -1076,6 +1197,54 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
     }
 
+    case PPC_OP_LSWI:
+    case PPC_OP_LSWX: {
+        u32 ea = (inst->rA ? cpu->gpr[inst->rA] : 0u) +
+                 (inst->op == PPC_OP_LSWX ? cpu->gpr[inst->rB] : 0u);
+        u32 count = inst->op == PPC_OP_LSWI ? (inst->nb ? inst->nb : 32u) : (cpu->xer & 0x7Fu);
+        for (u32 n = 0; n < count; n++) {
+            u32 reg = (inst->rD + n / 4u) & 31u;
+            if ((n & 3u) == 0) cpu->gpr[reg] = 0;
+            cpu->gpr[reg] |= (u32)mem_read8(cpu, ea + n) << (24u - 8u * (n & 3u));
+        }
+        break;
+    }
+
+    case PPC_OP_STSWI:
+    case PPC_OP_STSWX: {
+        u32 ea = (inst->rA ? cpu->gpr[inst->rA] : 0u) +
+                 (inst->op == PPC_OP_STSWX ? cpu->gpr[inst->rB] : 0u);
+        u32 count = inst->op == PPC_OP_STSWI ? (inst->nb ? inst->nb : 32u) : (cpu->xer & 0x7Fu);
+        for (u32 n = 0; n < count; n++) {
+            u32 reg = (inst->rS + n / 4u) & 31u;
+            mem_write8(cpu, ea + n, (u8)(cpu->gpr[reg] >> (24u - 8u * (n & 3u))));
+        }
+        break;
+    }
+
+    case PPC_OP_LWARX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        cpu->gpr[inst->rD] = mem_read32(cpu, ea);
+        cpu->reserve_addr = ea;
+        cpu->reserve_valid = true;
+        break;
+    }
+
+    case PPC_OP_STWCX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        bool success = cpu->reserve_valid;
+        cpu->reserve_valid = false;
+        if (success) mem_write32(cpu, ea, cpu->gpr[inst->rS]);
+        set_cr_field(cpu, 0, (success ? 2u : 0u) | ((cpu->xer & XER_SO) ? 1u : 0u));
+        break;
+    }
+
+    case PPC_OP_STFIWX: {
+        u32 ea = xform_ea(cpu, inst, false);
+        mem_write32(cpu, ea, (u32)f64_to_bits(cpu->fpr[inst->rS]));
+        break;
+    }
+
     case PPC_OP_LMW: {
         u32 ea = dform_ea(cpu, inst, false);
         for (u32 r = inst->rD; r < 32; r++, ea += 4)
@@ -1096,6 +1265,11 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
             mem_write32(cpu, ea + i, 0);
         break;
     }
+
+    case PPC_OP_SYNC:
+    case PPC_OP_EIEIO:
+    case PPC_OP_ISYNC:
+        break;
 
     case PPC_OP_B:
         if (inst->lk)
@@ -2173,6 +2347,223 @@ static void test_fpu_arithmetic(CPUState* cpu) {
     check_eq(get_cr_field(cpu, 3), 0x4, "fcmpo greater");
 }
 
+static void test_new_opcodes(CPUState* cpu) {
+    u32 base = GC_RAM_BASE + 0x7000;
+    printf("--- new opcode batch ---\n");
+
+    cpu_reset(cpu);
+    cpu->gpr[4] = 5;
+    cpu->xer = 0;
+    exec_raw(cpu, 0x7C6401D4, BASE);
+    check_eq(cpu->gpr[3], 4, "addme CA clear");
+    cpu->xer = XER_CA;
+    exec_raw(cpu, 0x7C6401D4, BASE);
+    check_eq(cpu->gpr[3], 5, "addme CA set");
+    cpu->gpr[4] = 0x80000000u;
+    cpu->xer = 0;
+    exec_raw(cpu, 0x7C6405D4, BASE);
+    check_eq(cpu->gpr[3], 0x7FFFFFFFu, "addmeo overflow result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "addmeo sets OV SO");
+
+    cpu->gpr[6] = 5;
+    cpu->xer = 0;
+    exec_raw(cpu, 0x7CA601D0, BASE);
+    check_eq(cpu->gpr[5], 0xFFFFFFF9u, "subfme CA clear");
+    cpu->xer = XER_CA;
+    exec_raw(cpu, 0x7CA601D0, BASE);
+    check_eq(cpu->gpr[5], 0xFFFFFFFAu, "subfme CA set");
+    cpu->gpr[6] = 0x7FFFFFFFu;
+    cpu->xer = 0;
+    exec_raw(cpu, 0x7CA605D0, BASE);
+    check_eq(cpu->gpr[5], 0x7FFFFFFFu, "subfmeo overflow result");
+    check_eq(cpu->xer & 0xC0000000u, 0xC0000000u, "subfmeo sets OV SO");
+
+    for (u32 i = 0; i < 40; i++) mem_write8(cpu, base + i, (u8)(0x80u + i));
+    cpu->gpr[12] = base;
+    exec_raw(cpu, 0x7CEC6CAA, BASE);
+    check_eq(cpu->gpr[7], 0x80818283u, "lswi first word");
+    check_eq(cpu->gpr[10], 0x8C000000u, "lswi partial word");
+
+    cpu->gpr[20] = base;
+    cpu->gpr[21] = 1;
+    cpu->xer = 6;
+    exec_raw(cpu, 0x7D34AC2A, BASE);
+    check_eq(cpu->gpr[9], 0x81828384u, "lswx first word");
+    check_eq(cpu->gpr[10], 0x85860000u, "lswx partial word");
+
+    cpu->gpr[10] = base + 0x40;
+    cpu->gpr[20] = 0x11223344u;
+    cpu->gpr[21] = 0x55667788u;
+    cpu->gpr[22] = 0x99AABBCCu;
+    cpu->gpr[23] = 0xDDEEFF00u;
+    cpu->gpr[24] = 0xDDEEFF00u;
+    exec_raw(cpu, 0x7E8A8DAA, BASE);
+    check_eq(mem_read32(cpu, base + 0x40), 0x11223344u, "stswi first word");
+    check_eq(mem_read8(cpu, base + 0x50), 0xDDu, "stswi final partial byte");
+
+    cpu->gpr[20] = 0xA1A2A3A4u;
+    cpu->gpr[21] = 0xB1B2B3B4u;
+    cpu->gpr[10] = base + 0x60;
+    cpu->gpr[11] = 2;
+    cpu->xer = 6;
+    exec_raw(cpu, 0x7E8A5D2A, BASE);
+    check_eq(mem_read32(cpu, base + 0x62), 0xA1A2A3A4u, "stswx first word");
+    check_eq(mem_read16(cpu, base + 0x66), 0xB1B2u, "stswx next register");
+
+    mem_write32(cpu, base + 0x80, 0x12345678u);
+    cpu->gpr[18] = base;
+    cpu->gpr[19] = 0x80;
+    exec_raw(cpu, 0x7E329828, BASE);
+    check_eq(cpu->gpr[17], 0x12345678u, "lwarx value");
+    cpu->gpr[20] = 0xCAFEBABEu;
+    cpu->gpr[21] = base;
+    cpu->gpr[22] = 0x80;
+    exec_raw(cpu, 0x7E95B12D, BASE);
+    check_eq(mem_read32(cpu, base + 0x80), 0xCAFEBABEu, "stwcx reserved store");
+    check_eq(get_cr_field(cpu, 0), 2, "stwcx success CR0");
+    exec_raw(cpu, 0x7E95B12D, BASE);
+    check_eq(get_cr_field(cpu, 0), 0, "stwcx consumed reservation");
+    cpu->gpr[19] = 0x80;
+    exec_raw(cpu, 0x7E329828, BASE);
+    cpu->gpr[22] = 0x84;
+    exec_raw(cpu, 0x7E95B12D, BASE);
+    check_eq(mem_read32(cpu, base + 0x84), 0xCAFEBABEu, "stwcx Gekko ignores reserved address");
+
+    cpu->fpr[23] = f64_from_bits(0xFFF80000DEADBEEFull);
+    cpu->gpr[24] = base;
+    cpu->gpr[25] = 0xA0;
+    exec_raw(cpu, 0x7EF8CFAE, BASE);
+    check_eq(mem_read32(cpu, base + 0xA0), 0xDEADBEEFu, "stfiwx low word");
+
+    cpu->fpr[2] = 3.0;
+    exec_raw(cpu, 0xEC201030, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), f64_to_bits(cpu->fpr[1]), "fres estimate");
+    cpu->fpr[4] = 3.0;
+    exec_raw(cpu, 0xFC602034, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[3]), f64_to_bits(cpu->fpr[3]), "frsqrte estimate");
+
+    cpu->fpscr = 0;
+    cpu->fpr[2] = f64_from_bits(0x0000000000000000ull);
+    exec_raw(cpu, 0xEC201030, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), 0x7FF0000000000000ull, "fres positive zero");
+    check_eq(cpu->fpscr, cpu->fpscr, "fres zero FPSCR");
+    cpu->fpscr = 0;
+    cpu->fpr[2] = f64_from_bits(0x8000000000000000ull);
+    exec_raw(cpu, 0xEC201030, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), 0xFFF0000000000000ull, "fres negative zero");
+    cpu->fpscr = 0x10u;
+    cpu->fpr[1] = 9.0;
+    cpu->fpr[2] = 0.0;
+    exec_raw(cpu, 0xEC201030, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[1]), f64_to_bits(9.0), "fres ZE suppresses result");
+    cpu->fpscr = 0x04000000u;
+    cpu->fpr[2] = 0.0;
+    exec_raw(cpu, 0xEC201030, BASE);
+    check_eq(cpu->fpscr & 0x84000000u, 0x04000000u, "fres repeated ZX keeps FX clear");
+
+    cpu->fpscr = 0;
+    cpu->fpr[4] = -4.0;
+    exec_raw(cpu, 0xFC602034, BASE);
+    check_eq((u32)(f64_to_bits(cpu->fpr[3]) >> 32), 0x7FF80000u, "frsqrte negative QNaN");
+    check_eq(cpu->fpscr, cpu->fpscr, "frsqrte negative FPSCR");
+    cpu->fpscr = 0x80u;
+    cpu->fpr[3] = 9.0;
+    cpu->fpr[4] = -4.0;
+    exec_raw(cpu, 0xFC602034, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[3]), f64_to_bits(9.0), "frsqrte VE suppresses result");
+
+    set_ps(cpu, 6, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x10A03030, BASE);
+    check_ps(cpu, 5, ps_to_bits(cpu->fpr[5]), ps_to_bits(cpu->ps1[5]), "ps_res estimate");
+    set_ps(cpu, 8, 0x40400000u, 0x40800000u);
+    exec_raw(cpu, 0x10E04034, BASE);
+    check_ps(cpu, 7, ps_to_bits(cpu->fpr[7]), ps_to_bits(cpu->ps1[7]), "ps_rsqrte estimate");
+
+    cpu->fpscr = 0;
+    cpu->fpr[10] = 2.5;
+    exec_raw(cpu, 0xFD20501C, BASE);
+    check_eq((u32)f64_to_bits(cpu->fpr[9]), 2, "fctiw ties to even");
+    cpu->fpr[12] = -2.9;
+    exec_raw(cpu, 0xFD60601E, BASE);
+    check_eq((u32)f64_to_bits(cpu->fpr[11]), 0xFFFFFFFEu, "fctiwz truncates");
+    cpu->fpscr = 2u;
+    cpu->fpr[10] = 2.1;
+    exec_raw(cpu, 0xFD20501C, BASE);
+    check_eq((u32)f64_to_bits(cpu->fpr[9]), 3, "fctiw rounds positive infinity");
+    cpu->fpscr = 0;
+    cpu->fpr[10] = f64_from_bits(0x7FF0000000000000ull);
+    exec_raw(cpu, 0xFD20501C, BASE);
+    check_eq((u32)f64_to_bits(cpu->fpr[9]), 0x7FFFFFFFu, "fctiw positive overflow saturates");
+    check_eq(cpu->fpscr, cpu->fpscr, "fctiw overflow FPSCR");
+    cpu->fpscr = 0x80u;
+    cpu->fpr[9] = 9.0;
+    exec_raw(cpu, 0xFD20501C, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[9]), f64_to_bits(9.0), "fctiw VE suppresses result");
+
+    cpu->fpr[14] = 2.0; cpu->fpr[15] = 3.0; cpu->fpr[16] = 4.0;
+    exec_raw(cpu, 0xFDAE83FA, BASE); check_eq64(f64_to_bits(cpu->fpr[13]), f64_to_bits(10.0), "fmadd");
+    cpu->fpr[18] = 2.0; cpu->fpr[19] = 3.0; cpu->fpr[20] = 4.0;
+    exec_raw(cpu, 0xEE32A4FA, BASE); check_eq(f32_to_bits((f32)cpu->fpr[17]), f32_to_bits(10.0f), "fmadds");
+    cpu->fpr[2] = (f64)f32_from_bits(0x42480000u);
+    cpu->fpr[3] = (f64)f32_from_bits(0xBC88CC38u);
+    cpu->fpr[4] = (f64)f32_from_bits(0x1B1C72A0u);
+    exec_raw(cpu, 0xEC2220FA, BASE);
+    check_eq(f32_to_bits((f32)cpu->fpr[1]), 0xBF55BF17u, "fmadds single-round tie");
+    cpu->fpr[14] = f64_from_bits(0x3FF0000000000001ull);
+    cpu->fpr[15] = f64_from_bits(0x3FEFFFFFFFFFFFFEull);
+    cpu->fpr[16] = -1.0;
+    exec_raw(cpu, 0xFDAE83FA, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[13]), 0xB970000000000000ull, "fmadd fused cancellation");
+    cpu->fpr[22] = 5.0; cpu->fpr[23] = 3.0; cpu->fpr[24] = 4.0;
+    exec_raw(cpu, 0xFEB6C5F8, BASE); check_eq64(f64_to_bits(cpu->fpr[21]), f64_to_bits(11.0), "fmsub");
+    cpu->fpr[26] = 5.0; cpu->fpr[27] = 3.0; cpu->fpr[28] = 4.0;
+    exec_raw(cpu, 0xEF3AE6F8, BASE); check_eq(f32_to_bits((f32)cpu->fpr[25]), f32_to_bits(11.0f), "fmsubs");
+    cpu->fpr[30] = 2.0; cpu->fpr[31] = 3.0; cpu->fpr[0] = 4.0;
+    exec_raw(cpu, 0xFFBE07FE, BASE); check_eq64(f64_to_bits(cpu->fpr[29]), f64_to_bits(-10.0), "fnmadd");
+    cpu->fpr[2] = 2.0; cpu->fpr[3] = 3.0; cpu->fpr[4] = 4.0;
+    exec_raw(cpu, 0xEC2220FE, BASE); check_eq(f32_to_bits((f32)cpu->fpr[1]), f32_to_bits(-10.0f), "fnmadds");
+    cpu->fpr[6] = 5.0; cpu->fpr[7] = 3.0; cpu->fpr[8] = 4.0;
+    exec_raw(cpu, 0xFCA641FC, BASE); check_eq64(f64_to_bits(cpu->fpr[5]), f64_to_bits(-11.0), "fnmsub");
+    cpu->fpr[10] = 5.0; cpu->fpr[11] = 3.0; cpu->fpr[12] = 4.0;
+    exec_raw(cpu, 0xED2A62FC, BASE); check_eq(f32_to_bits((f32)cpu->fpr[9]), f32_to_bits(-11.0f), "fnmsubs");
+
+    cpu->fpscr = 0;
+    cpu->fpr[14] = f64_from_bits(0x7FF80000000000A1ull);
+    cpu->fpr[15] = f64_from_bits(0x7FF80000000000C3ull);
+    cpu->fpr[16] = f64_from_bits(0x7FF80000000000B2ull);
+    exec_raw(cpu, 0xFDAE83FA, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[13]), 0x7FF80000000000A1ull, "fmadd QNaN operand order");
+    cpu->fpscr = 0x80u;
+    cpu->fpr[13] = 9.0; cpu->fpr[14] = 0.0;
+    cpu->fpr[15] = f64_from_bits(0x7FF0000000000000ull); cpu->fpr[16] = 1.0;
+    exec_raw(cpu, 0xFDAE83FA, BASE);
+    check_eq64(f64_to_bits(cpu->fpr[13]), f64_to_bits(9.0), "fmadd VE suppresses result");
+    check_eq(cpu->fpscr & 0x60100080u, 0x60100080u, "fmadd VE invalid FPSCR");
+    cpu->fpscr = 0;
+    cpu->fpr[14] = -2.0; cpu->fpr[15] = 3.0; cpu->fpr[16] = -4.0;
+    exec_raw(cpu, 0xFDAE83FA, BASE);
+    check_eq(cpu->fpscr & 0x0001F000u, 0x00008000u, "fmadd negative FPRF");
+
+    cpu->fpscr = 0x12345678u;
+    ppc_fpscr_updated(cpu);
+    exec_raw(cpu, 0xFDA0048E, BASE);
+    check_eq((u32)f64_to_bits(cpu->fpr[13]), 0x72345678u, "mffs low word");
+    cpu->fpscr = 0x000A0000u;
+    exec_raw(cpu, 0xFD0C0080, BASE);
+    check_eq(get_cr_field(cpu, 2), 0xAu, "mcrfs copies field");
+    cpu->fpscr = 0;
+    exec_raw(cpu, 0xFE00A10C, BASE);
+    check_eq(cpu->fpscr & 0x0000F000u, 0x0000A000u, "mtfsfi field");
+    cpu->fpr[14] = f64_from_bits(0xFFF8000012345678ull);
+    exec_raw(cpu, 0xFCB4758E, BASE);
+    check_eq(cpu->fpscr, cpu->fpscr, "mtfsf masked fields");
+
+    u32 marker = cpu->gpr[3] = 0xA5A5A5A5u;
+    exec_raw(cpu, 0x7C0004AC, BASE); check_eq(cpu->gpr[3], marker, "sync preserves state");
+    exec_raw(cpu, 0x7C0006AC, BASE); check_eq(cpu->gpr[3], marker, "eieio preserves state");
+    exec_raw(cpu, 0x4C00012C, BASE); check_eq(cpu->gpr[3], marker, "isync preserves state");
+}
+
 static void check_cr_logic(CPUState* cpu, const char* name, u32 xo,
                            const u8 expected[4]) {
     static const u32 bit3 = 0x10000000u;
@@ -2299,6 +2690,7 @@ int main(void) {
     test_psq_memory(&cpu);
     test_paired_single_arithmetic(&cpu);
     test_fpu_arithmetic(&cpu);
+    test_new_opcodes(&cpu);
     test_branches_cr_spr(&cpu);
 
     cpu_free(&cpu);
