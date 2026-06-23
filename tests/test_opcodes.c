@@ -534,19 +534,63 @@ static int test_unknown_opcode(void) {
 static int test_invalid_new_forms(void) {
     static const u32 invalid[] = {
         0x7C6409D4u, /* addme with reserved rB */
+        0x2C23FFFFu, /* cmpi with 64-bit L bit */
+        0x28238000u, /* cmpli with 64-bit L bit */
+        0x7CA32000u, /* cmp with 64-bit L bit */
+        0x7D232040u, /* cmpl with 64-bit L bit */
         0x7E329829u, /* lwarx with Rc */
         0x7E95B12Cu, /* stwcx without Rc */
         0xEC211030u, /* fres with reserved rA */
         0xEC201070u, /* fres with reserved bits 21-25 */
         0xFD21501Cu, /* fctiw with reserved rA */
+        0xFF21D090u, /* fmr with reserved rA */
+        0xFC211018u, /* frsp with reserved rA */
         0xFC612034u, /* frsqrte with reserved rA */
+        0x10211050u, /* ps_neg with reserved rA */
+        0xFD232000u, /* fcmpu with reserved bits 9-10 */
+        0x112D7000u, /* ps_cmpu0 with reserved bits 9-10 */
+        0xFFE1004Cu, /* mtfsb1 with reserved rA */
         0xFDA1048Eu, /* mffs with reserved rA */
         0xFD2C0080u, /* mcrfs with reserved bit 21 */
         0xFE01A10Cu, /* mtfsfi with reserved bit 16 */
         0xFCB5758Eu, /* mtfsf with reserved bit 16 */
+        0x4D2C0000u, /* mcrf with reserved bits 9-10 */
+        0x4D0C0800u, /* mcrf with reserved bits 14-20 */
+        0x4D0C0001u, /* mcrf with reserved Rc */
+        0x4C432203u, /* crand with reserved Rc */
+        0x4C432383u, /* cror with reserved Rc */
+        0x4C000420u, /* bcctr with CTR-decrementing BO */
         0x7C2004ACu, /* sync with reserved rD */
         0x7C0106ACu, /* eieio with reserved rA */
         0x4C20012Cu, /* isync with reserved rD */
+        0x84600000u, /* lwzu with rA = 0 */
+        0x84630000u, /* lwzu with rA = rD */
+        0x94600000u, /* stwu with rA = 0 */
+        0xC4800000u, /* lfsu with rA = 0 */
+        0xE4A00000u, /* psq_lu with rA = 0 */
+        0xF4A00000u, /* psq_stu with rA = 0 */
+        0xBA940000u, /* lmw with rA in loaded range */
+        0xB8000000u, /* lmw with rD = rA = 0 */
+        0x7CE724AAu, /* lswi with rA in loaded range */
+        0x7C0024AAu, /* lswi with rD = rA = 0 */
+        0x7D29AC2Au, /* lswx with rD = rA */
+        0x7D344C2Au, /* lswx with rD = rB */
+        0x7C64282Fu, /* lwzx with reserved Rc */
+        0x7C60286Eu, /* lwzux with rA = 0 */
+        0x7C63286Eu, /* lwzux with rA = rD */
+        0x7C60296Eu, /* stwux with rA = 0 */
+        0x11442C0Du, /* psq_lx with reserved Rc */
+        0x1140284Cu, /* psq_lux with rA = 0 */
+        0x1140284Eu, /* psq_stux with rA = 0 */
+        0x7C042FEDu, /* dcbz with reserved Rc */
+        0x7C242FECu, /* dcbz with reserved rD */
+        0x7C610026u, /* mfcr with reserved rA */
+        0x7C600826u, /* mfcr with reserved rB */
+        0x7C600027u, /* mfcr with reserved Rc */
+        0x7D5FF120u, /* mtcrf with reserved bit 11 */
+        0x7D4FF121u, /* mtcrf with reserved Rc */
+        0x7C6802A7u, /* mfspr with reserved Rc */
+        0x7C6803A7u, /* mtspr with reserved Rc */
     };
 
     printf("  invalid forms stay unknown\n");
@@ -554,6 +598,22 @@ static int test_invalid_new_forms(void) {
         PPCInst inst = ppc_decode(invalid[i], BASE);
         CHECK(inst.op == PPC_OP_UNKNOWN, "invalid 0x%08X decoded as %s",
               invalid[i], ppc_op_name(inst.op));
+    }
+    return 1;
+}
+
+static int test_unsupported_optional_forms(void) {
+    static const u32 unsupported[] = {
+        0xEC20102Cu, /* fsqrts */
+        0xFC20102Cu, /* fsqrt */
+        0x7C0002E4u, /* tlbia */
+    };
+
+    printf("  unsupported optional PPC forms stay unknown\n");
+    for (u32 i = 0; i < sizeof(unsupported) / sizeof(unsupported[0]); i++) {
+        PPCInst inst = ppc_decode(unsupported[i], BASE);
+        CHECK(inst.op == PPC_OP_UNKNOWN, "unsupported 0x%08X decoded as %s",
+              unsupported[i], ppc_op_name(inst.op));
     }
     return 1;
 }
@@ -575,6 +635,7 @@ static TestCase all_tests[] = {
     { "branch edges", test_branch_edges },
     { "unknown opcode", test_unknown_opcode },
     { "invalid new forms", test_invalid_new_forms },
+    { "unsupported optional forms", test_unsupported_optional_forms },
 };
 
 int main(void) {

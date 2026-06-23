@@ -37,6 +37,7 @@
 typedef struct CPUState CPUState;
 typedef u32 (*PPCExternalRead32)(CPUState* cpu, u32 ea, u8 rid);
 typedef void (*PPCExternalWrite32)(CPUState* cpu, u32 ea, u32 value, u8 rid);
+typedef void (*PPCInstructionFallback)(CPUState* cpu, u32 raw, u32 cia);
 
 struct CPUState {
     u32 gpr[32];
@@ -74,6 +75,7 @@ struct CPUState {
     bool locked_cache_valid[512];
     PPCExternalRead32 external_read32;
     PPCExternalWrite32 external_write32;
+    PPCInstructionFallback instruction_fallback;
 
     u8* ram;
     u32 ram_size;
@@ -106,6 +108,7 @@ bool ppc_trap_condition(u8 to, u32 a, u32 b);
 void ppc_set_xer_ov(CPUState* cpu, bool ov);
 void ppc_take_exception(CPUState* cpu, u32 exception, u32 vector, u32 srr0, u32 srr1_info);
 void ppc_program_exception(CPUState* cpu, u32 cause, u32 cia);
+void ppc_fallback_instruction(CPUState* cpu, u32 raw, u32 cia);
 void ppc_system_call_exception(CPUState* cpu, u32 cia);
 void ppc_dsi_exception(CPUState* cpu, u32 ea, u32 cia, u32 dsisr);
 void ppc_alignment_exception(CPUState* cpu, u32 ea, u32 cia);

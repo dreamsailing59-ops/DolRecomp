@@ -1399,6 +1399,15 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
             if (inst->rA)
                 fprintf(out, "        ea += ctx->gpr[%u];\n", inst->rA);
             fprintf(out, "        u32 count = ctx->xer & 0x7Fu;\n");
+            fprintf(out, "        u32 reg_count = (count + 3u) / 4u;\n");
+            fprintf(out, "        for (u32 r = 0; r < reg_count; r++) {\n");
+            fprintf(out, "            u32 reg = (%uu + r) & 31u;\n", inst->rD);
+            fprintf(out, "            if (reg == %uu || reg == %uu) {\n", inst->rA, inst->rB);
+            fprintf(out, "                ppc_program_exception(ctx, PPC_PROGRAM_ILLEGAL, 0x%08Xu);\n",
+                    inst->address);
+            fprintf(out, "                return;\n");
+            fprintf(out, "            }\n");
+            fprintf(out, "        }\n");
         } else {
             if (inst->rA) fprintf(out, "        u32 ea = ctx->gpr[%u];\n", inst->rA);
             else fprintf(out, "        u32 ea = 0u;\n");
@@ -1722,7 +1731,9 @@ static void emit_instruction_with_range(FILE* out, const PPCInst* inst,
         break;
 
     default:
-        fprintf(out, "    // unsupported instruction (raw: 0x%08X)\n", inst->raw);
+        fprintf(out, "    ppc_fallback_instruction(ctx, 0x%08Xu, 0x%08Xu);\n",
+                inst->raw, inst->address);
+        fprintf(out, "    return;\n");
         break;
     }
 

@@ -46,6 +46,12 @@ static void test_external_write32(CPUState* cpu, u32 ea, u32 value, u8 rid) {
     cpu->external_rid = rid;
 }
 
+static void test_instruction_fallback(CPUState* cpu, u32 raw, u32 cia) {
+    cpu->external_value = raw;
+    cpu->external_addr = cia;
+    cpu->gpr[3] = 0x0F1BACCBu;
+}
+
 static u32 make_dform(u32 opcd, u32 rt, u32 ra, u16 imm) {
     return (opcd << 26) | (rt << 21) | (ra << 16) | imm;
 }
@@ -92,6 +98,14 @@ static u32 make_mcrf(u32 crfd, u32 crfs) {
 
 static u32 make_mtcrf(u32 rs, u32 crm) {
     return (31u << 26) | (rs << 21) | (crm << 12) | (144u << 1);
+}
+
+static bool reg_in_wrapped_range(u8 start, u32 count, u8 reg) {
+    for (u32 i = 0; i < count; i++) {
+        if (((u32)start + i) % 32u == reg)
+            return true;
+    }
+    return false;
 }
 
 static u32 cr_shift(u8 crf) {
@@ -1269,6 +1283,14 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         u32 ea = (inst->rA ? cpu->gpr[inst->rA] : 0u) +
                  (inst->op == PPC_OP_LSWX ? cpu->gpr[inst->rB] : 0u);
         u32 count = inst->op == PPC_OP_LSWI ? (inst->nb ? inst->nb : 32u) : (cpu->xer & 0x7Fu);
+        if (inst->op == PPC_OP_LSWX) {
+            u32 reg_count = (count + 3u) / 4u;
+            if (reg_in_wrapped_range(inst->rD, reg_count, inst->rA) ||
+                reg_in_wrapped_range(inst->rD, reg_count, inst->rB)) {
+                ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, inst->address);
+                break;
+            }
+        }
         for (u32 n = 0; n < count; n++) {
             u32 reg = (inst->rD + n / 4u) & 31u;
             if ((n & 3u) == 0) cpu->gpr[reg] = 0;
@@ -1514,6 +1536,7 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
 
     default:
+        ppc_fallback_instruction(cpu, inst->raw, inst->address);
         break;
     }
 }
@@ -2723,6 +2746,22 @@ static void test_new_opcodes(CPUState* cpu) {
     check_eq(cpu->gpr[9], 0x81828384u, "lswx first word");
     check_eq(cpu->gpr[10], 0x85860000u, "lswx partial word");
 
+    cpu->exception = cpu->program_exception = 0;
+    cpu->gpr[10] = base;
+    cpu->gpr[21] = 0;
+    cpu->xer = 8;
+    exec_raw(cpu, 0x7D2AAC2A, BASE);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "lswx rA in range raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "lswx rA in range is illegal");
+
+    cpu->exception = cpu->program_exception = 0;
+    cpu->gpr[20] = base;
+    cpu->gpr[10] = 0;
+    cpu->xer = 8;
+    exec_raw(cpu, 0x7D34542A, BASE);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "lswx rB in range raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "lswx rB in range is illegal");
+
     cpu->gpr[10] = base + 0x40;
     cpu->gpr[20] = 0x11223344u;
     cpu->gpr[21] = 0x55667788u;
@@ -2952,6 +2991,28 @@ static void test_new_opcodes(CPUState* cpu) {
     cpu->gpr[27] = base; cpu->gpr[28] = 0;
     exec_raw(cpu, 0x7C1BE7AC, BASE); check_eq(cpu->gpr[3], marker, "icbi preserves state");
     exec_raw(cpu, 0x7C00046C, BASE); check_eq(cpu->gpr[3], marker, "tlbsync preserves state");
+
+    cpu->instruction_fallback = test_instruction_fallback;
+    cpu_reset(cpu);
+    exec_raw(cpu, 0xFC20102C, BASE + 0x1EC);
+    check_eq(cpu->external_value, 0xFC20102Cu, "fallback sees raw instruction");
+    check_eq(cpu->external_addr, BASE + 0x1EC, "fallback sees instruction address");
+    check_eq(cpu->gpr[3], 0x0F1BACCBu, "fallback can run instruction");
+    check_eq(cpu->exception, 0, "fallback avoids illegal trap");
+    cpu->instruction_fallback = NULL;
+
+    cpu->exception = cpu->program_exception = 0;
+    exec_raw(cpu, 0xFC20102C, BASE + 0x1F0);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "fsqrt raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "fsqrt is illegal");
+    cpu->exception = cpu->program_exception = 0;
+    exec_raw(cpu, 0xEC20102C, BASE + 0x1F4);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "fsqrts raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "fsqrts is illegal");
+    cpu->exception = cpu->program_exception = 0;
+    exec_raw(cpu, 0x7C0002E4, BASE + 0x1F8);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, "tlbia raises program");
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, "tlbia is illegal");
 
     cpu->exception = cpu->program_exception = 0;
     cpu->msr = 0x0000F073u;

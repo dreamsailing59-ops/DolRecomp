@@ -29,11 +29,35 @@ static void decode_d_rt_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->simm = PPC_SIMM(raw);
 }
 
+static void decode_d_rt_ra_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) == 0 || PPC_RA(raw) == PPC_RD(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_d_rt_ra(inst, op, raw);
+}
+
+static void decode_d_frt_ra_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_d_rt_ra(inst, op, raw);
+}
+
 static void decode_d_rs_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->op = op;
     inst->rS = PPC_RS(raw);
     inst->rA = PPC_RA(raw);
     inst->simm = PPC_SIMM(raw);
+}
+
+static void decode_d_rs_ra_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_d_rs_ra(inst, op, raw);
 }
 
 static void decode_x_rt_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
@@ -42,6 +66,30 @@ static void decode_x_rt_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->rA = PPC_RA(raw);
     inst->rB = PPC_RB(raw);
     inst->rc = PPC_RC(raw);
+}
+
+static void decode_x_rt_ra_rb_norc(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_x_rt_ra_rb(inst, op, raw);
+}
+
+static void decode_x_rt_ra_rb_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw) || PPC_RA(raw) == 0 || PPC_RA(raw) == PPC_RD(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_x_rt_ra_rb(inst, op, raw);
+}
+
+static void decode_x_frt_ra_rb_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw) || PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_x_rt_ra_rb(inst, op, raw);
 }
 
 static void decode_xo_rt_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
@@ -57,6 +105,22 @@ static void decode_x_rs_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->rc = PPC_RC(raw);
 }
 
+static void decode_x_rs_ra_rb_norc(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_x_rs_ra_rb(inst, op, raw);
+}
+
+static void decode_x_rs_ra_rb_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw) || PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_x_rs_ra_rb(inst, op, raw);
+}
+
 static void decode_a_frt_fra_frb_frc(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->op = op;
     inst->rD = PPC_RD(raw);
@@ -67,6 +131,10 @@ static void decode_a_frt_fra_frb_frc(PPCInst* inst, PPCOpcode op, u32 raw) {
 }
 
 static void decode_x_frt_frb(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) != 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
     inst->op = op;
     inst->rD = PPC_RD(raw);
     inst->rB = PPC_RB(raw);
@@ -74,13 +142,32 @@ static void decode_x_frt_frb(PPCInst* inst, PPCOpcode op, u32 raw) {
 }
 
 static void decode_fcmp(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (raw & ((3u << 21) | 1u)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
     inst->op = op;
     inst->crfD = (raw >> 23) & 0x7;
     inst->rA = PPC_RA(raw);
     inst->rB = PPC_RB(raw);
 }
 
+static void decode_cr_logical(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    inst->op = op;
+    inst->rD = PPC_RD(raw);
+    inst->rA = PPC_RA(raw);
+    inst->rB = PPC_RB(raw);
+}
+
 static void decode_mtfsb(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) != 0 || PPC_RB(raw) != 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
     inst->op = op;
     inst->rD = PPC_RD(raw);
     inst->rc = PPC_RC(raw);
@@ -103,6 +190,14 @@ static void decode_psq_d_rt_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->simm = (s16)sign_extend(raw & 0x0FFFu, 12);
 }
 
+static void decode_psq_d_rt_ra_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_d_rt_ra(inst, op, raw);
+}
+
 static void decode_psq_d_rs_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->op = op;
     inst->rS = PPC_RS(raw);
@@ -110,6 +205,14 @@ static void decode_psq_d_rs_ra(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->w = (raw >> 15) & 1u;
     inst->i = (raw >> 12) & 7u;
     inst->simm = (s16)sign_extend(raw & 0x0FFFu, 12);
+}
+
+static void decode_psq_d_rs_ra_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_d_rs_ra(inst, op, raw);
 }
 
 static void decode_psq_x_rt_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
@@ -121,6 +224,22 @@ static void decode_psq_x_rt_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->i = (raw >> 7) & 7u;
 }
 
+static void decode_psq_x_rt_ra_rb_norc(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_x_rt_ra_rb(inst, op, raw);
+}
+
+static void decode_psq_x_rt_ra_rb_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw) || PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_x_rt_ra_rb(inst, op, raw);
+}
+
 static void decode_psq_x_rs_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->op = op;
     inst->rS = PPC_RS(raw);
@@ -128,6 +247,35 @@ static void decode_psq_x_rs_ra_rb(PPCInst* inst, PPCOpcode op, u32 raw) {
     inst->rB = PPC_RB(raw);
     inst->w = (raw >> 10) & 1u;
     inst->i = (raw >> 7) & 7u;
+}
+
+static void decode_psq_x_rs_ra_rb_norc(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw)) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_x_rs_ra_rb(inst, op, raw);
+}
+
+static void decode_psq_x_rs_ra_rb_update(PPCInst* inst, PPCOpcode op, u32 raw) {
+    if (PPC_RC(raw) || PPC_RA(raw) == 0) {
+        inst->op = PPC_OP_UNKNOWN;
+        return;
+    }
+    decode_psq_x_rs_ra_rb(inst, op, raw);
+}
+
+static bool reg_in_wrapped_range(u8 start, u32 count, u8 reg) {
+    for (u32 i = 0; i < count; i++) {
+        if (((u32)start + i) % 32u == reg)
+            return true;
+    }
+    return false;
+}
+
+static u32 string_register_count(u8 byte_count) {
+    u32 count = byte_count ? byte_count : 32u;
+    return (count + 3u) / 4u;
 }
 
 PPCInst ppc_decode(u32 raw, u32 address) {
@@ -180,10 +328,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         default: {
             u32 psxo = xo & 0x3Fu;
             switch (psxo) {
-            case 6:  decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LX, raw); break;
-            case 7:  decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STX, raw); break;
-            case 38: decode_psq_x_rt_ra_rb(&inst, PPC_OP_PSQ_LUX, raw); break;
-            case 39: decode_psq_x_rs_ra_rb(&inst, PPC_OP_PSQ_STUX, raw); break;
+            case 6:  decode_psq_x_rt_ra_rb_norc(&inst, PPC_OP_PSQ_LX, raw); break;
+            case 7:  decode_psq_x_rs_ra_rb_norc(&inst, PPC_OP_PSQ_STX, raw); break;
+            case 38: decode_psq_x_rt_ra_rb_update(&inst, PPC_OP_PSQ_LUX, raw); break;
+            case 39: decode_psq_x_rs_ra_rb_update(&inst, PPC_OP_PSQ_STUX, raw); break;
             default: {
                 switch (PPC_A_XO(raw)) {
                 case 10: decode_a_frt_fra_frb_frc(&inst, PPC_OP_PS_SUM0, raw); break;
@@ -218,6 +366,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         break;
 
     case 10: // cmpli/cmplwi
+        if ((raw >> 21) & 1u) {
+            inst.op = PPC_OP_UNKNOWN;
+            break;
+        }
         inst.op   = PPC_OP_CMPLI;
         inst.crfD = (raw >> 23) & 0x7;
         inst.l    = (raw >> 21) & 0x1;
@@ -226,6 +378,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         break;
 
     case 11: // cmpi/cmpwi
+        if ((raw >> 21) & 1u) {
+            inst.op = PPC_OP_UNKNOWN;
+            break;
+        }
         inst.op   = PPC_OP_CMPI;
         inst.crfD = (raw >> 23) & 0x7;
         inst.l    = (raw >> 21) & 0x1;
@@ -283,9 +439,13 @@ PPCInst ppc_decode(u32 raw, u32 address) {
     case 19: {
         u32 xo = PPC_XO(raw);
         if (xo == 0) {
-            inst.op   = PPC_OP_MCRF;
-            inst.crfD = (raw >> 23) & 0x7;
-            inst.crfS = (raw >> 18) & 0x7;
+            if (raw & ((3u << 21) | (0x7Fu << 11) | 1u)) {
+                inst.op = PPC_OP_UNKNOWN;
+            } else {
+                inst.op   = PPC_OP_MCRF;
+                inst.crfD = (raw >> 23) & 0x7;
+                inst.crfS = (raw >> 18) & 0x7;
+            }
         } else if (raw == 0x4C000064u) {
             inst.op = PPC_OP_RFI;
         } else if (xo == 16) {
@@ -296,50 +456,30 @@ PPCInst ppc_decode(u32 raw, u32 address) {
         } else if (raw == 0x4C00012Cu) {
             inst.op = PPC_OP_ISYNC;
         } else if (xo == 33) {
-            inst.op = PPC_OP_CRNOR;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRNOR, raw);
         } else if (xo == 129) {
-            inst.op = PPC_OP_CRANDC;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRANDC, raw);
         } else if (xo == 193) {
-            inst.op = PPC_OP_CRXOR;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRXOR, raw);
         } else if (xo == 225) {
-            inst.op = PPC_OP_CRNAND;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRNAND, raw);
         } else if (xo == 257) {
-            inst.op = PPC_OP_CRAND;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRAND, raw);
         } else if (xo == 289) {
-            inst.op = PPC_OP_CREQV;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CREQV, raw);
         } else if (xo == 417) {
-            inst.op = PPC_OP_CRORC;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CRORC, raw);
         } else if (xo == 449) {
-            inst.op = PPC_OP_CROR;
-            inst.rD = PPC_RD(raw);
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            decode_cr_logical(&inst, PPC_OP_CROR, raw);
         } else if (xo == 528) {
-            inst.op = PPC_OP_BCCTR;
-            inst.bo = PPC_BO(raw);
-            inst.bi = PPC_BI(raw);
-            inst.lk = raw & 1;
+            if ((PPC_BO(raw) & 4u) == 0) {
+                inst.op = PPC_OP_UNKNOWN;
+            } else {
+                inst.op = PPC_OP_BCCTR;
+                inst.bo = PPC_BO(raw);
+                inst.bi = PPC_BI(raw);
+                inst.lk = raw & 1;
+            }
         } else {
             inst.op = PPC_OP_UNKNOWN;
         }
@@ -455,6 +595,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             break;
         switch (xo) {
         case 0: // cmp/cmpw
+            if ((raw >> 21) & 1u) {
+                inst.op = PPC_OP_UNKNOWN;
+                break;
+            }
             inst.op   = PPC_OP_CMP;
             inst.crfD = (raw >> 23) & 0x7;
             inst.l    = (raw >> 21) & 0x1;
@@ -471,18 +615,24 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             break;
         case 11:  decode_x_rt_ra_rb(&inst, PPC_OP_MULHWU, raw); break;
         case 19:
-            inst.op = PPC_OP_MFCR;
-            inst.rD = PPC_RD(raw);
+            if (PPC_RA(raw) == 0 && PPC_RB(raw) == 0 && !PPC_RC(raw)) {
+                inst.op = PPC_OP_MFCR;
+                inst.rD = PPC_RD(raw);
+            } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 20:
             if (!PPC_RC(raw)) decode_x_rt_ra_rb(&inst, PPC_OP_LWARX, raw);
             else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 23:  decode_x_rt_ra_rb(&inst, PPC_OP_LWZX, raw); break;
+        case 23:  decode_x_rt_ra_rb_norc(&inst, PPC_OP_LWZX, raw); break;
         case 24:  decode_x_rs_ra_rb(&inst, PPC_OP_SLW, raw); break;
         case 26:  decode_x_rs_ra_rb(&inst, PPC_OP_CNTLZW, raw); break;
         case 28:  decode_x_rs_ra_rb(&inst, PPC_OP_AND, raw); break;
         case 32: // cmpl/cmplw
+            if ((raw >> 21) & 1u) {
+                inst.op = PPC_OP_UNKNOWN;
+                break;
+            }
             inst.op   = PPC_OP_CMPL;
             inst.crfD = (raw >> 23) & 0x7;
             inst.l    = (raw >> 21) & 0x1;
@@ -496,7 +646,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rB = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 55:  decode_x_rt_ra_rb(&inst, PPC_OP_LWZUX, raw); break;
+        case 55:  decode_x_rt_ra_rb_update(&inst, PPC_OP_LWZUX, raw); break;
         case 60:  decode_x_rs_ra_rb(&inst, PPC_OP_ANDC, raw); break;
         case 75:  decode_x_rt_ra_rb(&inst, PPC_OP_MULHW, raw); break;
         case 83:
@@ -512,13 +662,15 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rB = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 87:  decode_x_rt_ra_rb(&inst, PPC_OP_LBZX, raw); break;
-        case 119: decode_x_rt_ra_rb(&inst, PPC_OP_LBZUX, raw); break;
+        case 87:  decode_x_rt_ra_rb_norc(&inst, PPC_OP_LBZX, raw); break;
+        case 119: decode_x_rt_ra_rb_update(&inst, PPC_OP_LBZUX, raw); break;
         case 124: decode_x_rs_ra_rb(&inst, PPC_OP_NOR, raw); break;
         case 144:
-            inst.op  = PPC_OP_MTCRF;
-            inst.rS  = PPC_RS(raw);
-            inst.crm = PPC_CRM(raw);
+            if ((raw & ((1u << 20) | 1u)) == 0) {
+                inst.op  = PPC_OP_MTCRF;
+                inst.rS  = PPC_RS(raw);
+                inst.crm = PPC_CRM(raw);
+            } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 146:
             if (PPC_RA(raw) == 0 && PPC_RB(raw) == 0 && !PPC_RC(raw)) {
@@ -526,8 +678,8 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rS = PPC_RS(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 151: decode_x_rs_ra_rb(&inst, PPC_OP_STWX, raw); break;
-        case 183: decode_x_rs_ra_rb(&inst, PPC_OP_STWUX, raw); break;
+        case 151: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STWX, raw); break;
+        case 183: decode_x_rs_ra_rb_update(&inst, PPC_OP_STWUX, raw); break;
         case 210:
             if (((raw >> 20) & 1u) == 0 && PPC_RB(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_MTSR;
@@ -535,7 +687,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.sr = PPC_RA(raw) & 0xFu;
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 215: decode_x_rs_ra_rb(&inst, PPC_OP_STBX, raw); break;
+        case 215: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STBX, raw); break;
         case 242:
             if (PPC_RA(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_MTSRIN;
@@ -550,7 +702,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rB = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 247: decode_x_rs_ra_rb(&inst, PPC_OP_STBUX, raw); break;
+        case 247: decode_x_rs_ra_rb_update(&inst, PPC_OP_STBUX, raw); break;
         case 278:
             if (PPC_RD(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_DCBT;
@@ -558,7 +710,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rB = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 279: decode_x_rt_ra_rb(&inst, PPC_OP_LHZX, raw); break;
+        case 279: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LHZX, raw); break;
         case 284: decode_x_rs_ra_rb(&inst, PPC_OP_EQV, raw); break;
         case 306:
             if (PPC_RD(raw) == 0 && PPC_RA(raw) == 0 && !PPC_RC(raw)) {
@@ -570,12 +722,14 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             if (!PPC_RC(raw)) decode_x_rt_ra_rb(&inst, PPC_OP_ECIWX, raw);
             else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 311: decode_x_rt_ra_rb(&inst, PPC_OP_LHZUX, raw); break;
+        case 311: decode_x_rt_ra_rb_update(&inst, PPC_OP_LHZUX, raw); break;
         case 316: decode_x_rs_ra_rb(&inst, PPC_OP_XOR, raw); break;
         case 339:
-            inst.op  = PPC_OP_MFSPR;
-            inst.rD  = PPC_RD(raw);
-            inst.spr = PPC_SPR(raw);
+            if (!PPC_RC(raw)) {
+                inst.op  = PPC_OP_MFSPR;
+                inst.rD  = PPC_RD(raw);
+                inst.spr = PPC_SPR(raw);
+            } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 371:
             if (!PPC_RC(raw)) {
@@ -584,15 +738,15 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.spr = PPC_SPR(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 343: decode_x_rt_ra_rb(&inst, PPC_OP_LHAX, raw); break;
-        case 375: decode_x_rt_ra_rb(&inst, PPC_OP_LHAUX, raw); break;
-        case 407: decode_x_rs_ra_rb(&inst, PPC_OP_STHX, raw); break;
+        case 343: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LHAX, raw); break;
+        case 375: decode_x_rt_ra_rb_update(&inst, PPC_OP_LHAUX, raw); break;
+        case 407: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STHX, raw); break;
         case 412: decode_x_rs_ra_rb(&inst, PPC_OP_ORC, raw); break;
         case 438:
             if (!PPC_RC(raw)) decode_x_rs_ra_rb(&inst, PPC_OP_ECOWX, raw);
             else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 439: decode_x_rs_ra_rb(&inst, PPC_OP_STHUX, raw); break;
+        case 439: decode_x_rs_ra_rb_update(&inst, PPC_OP_STHUX, raw); break;
         case 444: decode_x_rs_ra_rb(&inst, PPC_OP_OR, raw); break;
         case 470:
             if (PPC_RD(raw) == 0 && !PPC_RC(raw)) {
@@ -602,9 +756,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 467:
-            inst.op  = PPC_OP_MTSPR;
-            inst.rS  = PPC_RS(raw);
-            inst.spr = PPC_SPR(raw);
+            if (!PPC_RC(raw)) {
+                inst.op  = PPC_OP_MTSPR;
+                inst.rS  = PPC_RS(raw);
+                inst.spr = PPC_SPR(raw);
+            } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 476: decode_x_rs_ra_rb(&inst, PPC_OP_NAND, raw); break;
         case 512:
@@ -614,15 +770,17 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 533:
-            if (!PPC_RC(raw)) decode_x_rt_ra_rb(&inst, PPC_OP_LSWX, raw);
+            if (!PPC_RC(raw) && PPC_RD(raw) != PPC_RA(raw) && PPC_RD(raw) != PPC_RB(raw))
+                decode_x_rt_ra_rb(&inst, PPC_OP_LSWX, raw);
             else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 534: decode_x_rt_ra_rb(&inst, PPC_OP_LWBRX, raw); break;
-        case 535: decode_x_rt_ra_rb(&inst, PPC_OP_LFSX, raw); break;
+        case 534: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LWBRX, raw); break;
+        case 535: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LFSX, raw); break;
         case 536: decode_x_rs_ra_rb(&inst, PPC_OP_SRW, raw); break;
-        case 567: decode_x_rt_ra_rb(&inst, PPC_OP_LFSUX, raw); break;
+        case 567: decode_x_frt_ra_rb_update(&inst, PPC_OP_LFSUX, raw); break;
         case 597:
-            if (!PPC_RC(raw)) {
+            if (!PPC_RC(raw) &&
+                !reg_in_wrapped_range(PPC_RD(raw), string_register_count(PPC_RB(raw)), PPC_RA(raw))) {
                 inst.op = PPC_OP_LSWI;
                 inst.rD = PPC_RD(raw);
                 inst.rA = PPC_RA(raw);
@@ -630,8 +788,8 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             } else inst.op = PPC_OP_UNKNOWN;
             break;
         case 598: inst.op = raw == 0x7C0004ACu ? PPC_OP_SYNC : PPC_OP_UNKNOWN; break;
-        case 599: decode_x_rt_ra_rb(&inst, PPC_OP_LFDX, raw); break;
-        case 631: decode_x_rt_ra_rb(&inst, PPC_OP_LFDUX, raw); break;
+        case 599: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LFDX, raw); break;
+        case 631: decode_x_frt_ra_rb_update(&inst, PPC_OP_LFDUX, raw); break;
         case 595:
             if (((raw >> 20) & 1u) == 0 && PPC_RB(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_MFSR;
@@ -643,7 +801,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             if (!PPC_RC(raw)) decode_x_rs_ra_rb(&inst, PPC_OP_STSWX, raw);
             else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 662: decode_x_rs_ra_rb(&inst, PPC_OP_STWBRX, raw); break;
+        case 662: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STWBRX, raw); break;
         case 659:
             if (PPC_RA(raw) == 0 && !PPC_RC(raw)) {
                 inst.op = PPC_OP_MFSRIN;
@@ -651,10 +809,10 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.rB = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 663: decode_x_rs_ra_rb(&inst, PPC_OP_STFSX, raw); break;
-        case 695: decode_x_rs_ra_rb(&inst, PPC_OP_STFSUX, raw); break;
-        case 727: decode_x_rs_ra_rb(&inst, PPC_OP_STFDX, raw); break;
-        case 759: decode_x_rs_ra_rb(&inst, PPC_OP_STFDUX, raw); break;
+        case 663: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STFSX, raw); break;
+        case 695: decode_x_rs_ra_rb_update(&inst, PPC_OP_STFSUX, raw); break;
+        case 727: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STFDX, raw); break;
+        case 759: decode_x_rs_ra_rb_update(&inst, PPC_OP_STFDUX, raw); break;
         case 725:
             if (!PPC_RC(raw)) {
                 inst.op = PPC_OP_STSWI;
@@ -663,7 +821,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
                 inst.nb = PPC_RB(raw);
             } else inst.op = PPC_OP_UNKNOWN;
             break;
-        case 790: decode_x_rt_ra_rb(&inst, PPC_OP_LHBRX, raw); break;
+        case 790: decode_x_rt_ra_rb_norc(&inst, PPC_OP_LHBRX, raw); break;
         case 792: decode_x_rs_ra_rb(&inst, PPC_OP_SRAW, raw); break;
         case 824:
             inst.op = PPC_OP_SRAWI;
@@ -672,7 +830,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             inst.sh = PPC_SH(raw);
             inst.rc = PPC_RC(raw);
             break;
-        case 918: decode_x_rs_ra_rb(&inst, PPC_OP_STHBRX, raw); break;
+        case 918: decode_x_rs_ra_rb_norc(&inst, PPC_OP_STHBRX, raw); break;
         case 922: decode_x_rs_ra_rb(&inst, PPC_OP_EXTSH, raw); break;
         case 954: decode_x_rs_ra_rb(&inst, PPC_OP_EXTSB, raw); break;
         case 982:
@@ -695,9 +853,11 @@ PPCInst ppc_decode(u32 raw, u32 address) {
             else inst.op = PPC_OP_UNKNOWN;
             break;
         case 1014:
-            inst.op = PPC_OP_DCBZ;
-            inst.rA = PPC_RA(raw);
-            inst.rB = PPC_RB(raw);
+            if (PPC_RD(raw) == 0 && !PPC_RC(raw)) {
+                inst.op = PPC_OP_DCBZ;
+                inst.rA = PPC_RA(raw);
+                inst.rB = PPC_RB(raw);
+            } else inst.op = PPC_OP_UNKNOWN;
             break;
         default:
             inst.op = PPC_OP_UNKNOWN;
@@ -707,33 +867,38 @@ PPCInst ppc_decode(u32 raw, u32 address) {
     }
 
     case 32: decode_d_rt_ra(&inst, PPC_OP_LWZ, raw); break;
-    case 33: decode_d_rt_ra(&inst, PPC_OP_LWZU, raw); break;
+    case 33: decode_d_rt_ra_update(&inst, PPC_OP_LWZU, raw); break;
     case 34: decode_d_rt_ra(&inst, PPC_OP_LBZ, raw); break;
-    case 35: decode_d_rt_ra(&inst, PPC_OP_LBZU, raw); break;
+    case 35: decode_d_rt_ra_update(&inst, PPC_OP_LBZU, raw); break;
     case 36: decode_d_rs_ra(&inst, PPC_OP_STW, raw); break;
-    case 37: decode_d_rs_ra(&inst, PPC_OP_STWU, raw); break;
+    case 37: decode_d_rs_ra_update(&inst, PPC_OP_STWU, raw); break;
     case 38: decode_d_rs_ra(&inst, PPC_OP_STB, raw); break;
-    case 39: decode_d_rs_ra(&inst, PPC_OP_STBU, raw); break;
+    case 39: decode_d_rs_ra_update(&inst, PPC_OP_STBU, raw); break;
     case 40: decode_d_rt_ra(&inst, PPC_OP_LHZ, raw); break;
-    case 41: decode_d_rt_ra(&inst, PPC_OP_LHZU, raw); break;
+    case 41: decode_d_rt_ra_update(&inst, PPC_OP_LHZU, raw); break;
     case 42: decode_d_rt_ra(&inst, PPC_OP_LHA, raw); break;
-    case 43: decode_d_rt_ra(&inst, PPC_OP_LHAU, raw); break;
+    case 43: decode_d_rt_ra_update(&inst, PPC_OP_LHAU, raw); break;
     case 44: decode_d_rs_ra(&inst, PPC_OP_STH, raw); break;
-    case 45: decode_d_rs_ra(&inst, PPC_OP_STHU, raw); break;
-    case 46: decode_d_rt_ra(&inst, PPC_OP_LMW, raw); break;
+    case 45: decode_d_rs_ra_update(&inst, PPC_OP_STHU, raw); break;
+    case 46:
+        if (reg_in_wrapped_range(PPC_RD(raw), 32u - PPC_RD(raw), PPC_RA(raw)))
+            inst.op = PPC_OP_UNKNOWN;
+        else
+            decode_d_rt_ra(&inst, PPC_OP_LMW, raw);
+        break;
     case 47: decode_d_rs_ra(&inst, PPC_OP_STMW, raw); break;
     case 48: decode_d_rt_ra(&inst, PPC_OP_LFS, raw); break;
-    case 49: decode_d_rt_ra(&inst, PPC_OP_LFSU, raw); break;
+    case 49: decode_d_frt_ra_update(&inst, PPC_OP_LFSU, raw); break;
     case 50: decode_d_rt_ra(&inst, PPC_OP_LFD, raw); break;
-    case 51: decode_d_rt_ra(&inst, PPC_OP_LFDU, raw); break;
+    case 51: decode_d_frt_ra_update(&inst, PPC_OP_LFDU, raw); break;
     case 52: decode_d_rs_ra(&inst, PPC_OP_STFS, raw); break;
-    case 53: decode_d_rs_ra(&inst, PPC_OP_STFSU, raw); break;
+    case 53: decode_d_rs_ra_update(&inst, PPC_OP_STFSU, raw); break;
     case 54: decode_d_rs_ra(&inst, PPC_OP_STFD, raw); break;
-    case 55: decode_d_rs_ra(&inst, PPC_OP_STFDU, raw); break;
+    case 55: decode_d_rs_ra_update(&inst, PPC_OP_STFDU, raw); break;
     case 56: decode_psq_d_rt_ra(&inst, PPC_OP_PSQ_L, raw); break;
-    case 57: decode_psq_d_rt_ra(&inst, PPC_OP_PSQ_LU, raw); break;
+    case 57: decode_psq_d_rt_ra_update(&inst, PPC_OP_PSQ_LU, raw); break;
     case 60: decode_psq_d_rs_ra(&inst, PPC_OP_PSQ_ST, raw); break;
-    case 61: decode_psq_d_rs_ra(&inst, PPC_OP_PSQ_STU, raw); break;
+    case 61: decode_psq_d_rs_ra_update(&inst, PPC_OP_PSQ_STU, raw); break;
 
     case 59:
         switch (PPC_A_XO(raw)) {

@@ -117,7 +117,7 @@ target_include_directories(test_codegen_emit PRIVATE src)
 add_test(NAME codegen_compile
     COMMAND ${CMAKE_COMMAND}
         -DGENERATOR_EXE=$<TARGET_FILE:test_codegen_emit>
-        -DOUTPUT_C=${CMAKE_CURRENT_BINARY_DIR}/codegen_smoke.c
+        -DOUTPUT_C=${CMAKE_CURRENT_BINARY_DIR}/codegen_check.c
         -DREPO_SRC=${CMAKE_CURRENT_SOURCE_DIR}/src
         -DHOST_GENERATOR=${CMAKE_GENERATOR}
         -DHOST_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}

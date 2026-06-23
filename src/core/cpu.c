@@ -33,10 +33,16 @@ void cpu_free(CPUState* cpu) {
 void cpu_reset(CPUState* cpu) {
     u8* ram = cpu->ram;
     u32 ram_size = cpu->ram_size;
+    PPCExternalRead32 external_read32 = cpu->external_read32;
+    PPCExternalWrite32 external_write32 = cpu->external_write32;
+    PPCInstructionFallback instruction_fallback = cpu->instruction_fallback;
 
     memset(cpu, 0, sizeof(*cpu));
     cpu->ram = ram;
     cpu->ram_size = ram_size;
+    cpu->external_read32 = external_read32;
+    cpu->external_write32 = external_write32;
+    cpu->instruction_fallback = instruction_fallback;
 
     if (cpu->ram)
         memset(cpu->ram, 0, cpu->ram_size);
@@ -195,6 +201,16 @@ void ppc_take_exception(CPUState* cpu, u32 exception, u32 vector, u32 srr0, u32 
 void ppc_program_exception(CPUState* cpu, u32 cause, u32 cia) {
     cpu->program_exception |= cause;
     ppc_take_exception(cpu, PPC_EXC_PROGRAM, PPC_VECTOR_PROGRAM, cia, cause);
+}
+
+void ppc_fallback_instruction(CPUState* cpu, u32 raw, u32 cia) {
+    if (cpu->instruction_fallback) {
+        cpu->instruction_fallback(cpu, raw, cia);
+        return;
+    }
+
+    (void)raw;
+    ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
 }
 
 void ppc_system_call_exception(CPUState* cpu, u32 cia) {

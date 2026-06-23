@@ -5,27 +5,32 @@ execute_process(
     ERROR_VARIABLE gen_stderr
 )
 if(NOT gen_result EQUAL 0)
-    message(FATAL_ERROR "codegen smoke generation failed:\n${gen_stdout}\n${gen_stderr}")
+    message(FATAL_ERROR "codegen generation failed:\n${gen_stdout}\n${gen_stderr}")
+endif()
+
+file(READ "${OUTPUT_C}" generated_source)
+if(generated_source MATCHES "ppc_fallback_instruction")
+    message(FATAL_ERROR "known opcode codegen emitted a fallback instruction")
 endif()
 
 get_filename_component(output_dir "${OUTPUT_C}" DIRECTORY)
-set(smoke_src_dir "${output_dir}/codegen_smoke_project")
-set(smoke_build_dir "${output_dir}/codegen_smoke_build")
+set(check_src_dir "${output_dir}/codegen_check_project")
+set(check_build_dir "${output_dir}/codegen_check_build")
 
 file(TO_CMAKE_PATH "${OUTPUT_C}" output_c_cmake)
 file(TO_CMAKE_PATH "${REPO_SRC}" repo_src_cmake)
 
-file(MAKE_DIRECTORY "${smoke_src_dir}")
-file(WRITE "${smoke_src_dir}/CMakeLists.txt"
+file(MAKE_DIRECTORY "${check_src_dir}")
+file(WRITE "${check_src_dir}/CMakeLists.txt"
 "cmake_minimum_required(VERSION 3.16)
-project(CodegenSmoke C)
+project(CodegenCompileCheck C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-add_library(codegen_smoke OBJECT \"${output_c_cmake}\")
-target_include_directories(codegen_smoke PRIVATE \"${repo_src_cmake}\")
+add_library(codegen_check OBJECT \"${output_c_cmake}\")
+target_include_directories(codegen_check PRIVATE \"${repo_src_cmake}\")
 ")
 
-set(configure_args -S "${smoke_src_dir}" -B "${smoke_build_dir}")
+set(configure_args -S "${check_src_dir}" -B "${check_build_dir}")
 if(DEFINED HOST_GENERATOR AND NOT HOST_GENERATOR STREQUAL "")
     list(APPEND configure_args -G "${HOST_GENERATOR}")
 endif()
@@ -51,10 +56,10 @@ execute_process(
     ERROR_VARIABLE configure_stderr
 )
 if(NOT configure_result EQUAL 0)
-    message(FATAL_ERROR "codegen smoke configure failed:\n${configure_stdout}\n${configure_stderr}")
+    message(FATAL_ERROR "codegen configure failed:\n${configure_stdout}\n${configure_stderr}")
 endif()
 
-set(build_args --build "${smoke_build_dir}")
+set(build_args --build "${check_build_dir}")
 if(DEFINED HOST_BUILD_CONFIG AND NOT HOST_BUILD_CONFIG STREQUAL "")
     list(APPEND build_args --config "${HOST_BUILD_CONFIG}")
 endif()
