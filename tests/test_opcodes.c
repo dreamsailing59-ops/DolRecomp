@@ -461,6 +461,12 @@ static int test_field_edges(void) {
     CHECK(inst.rA == 15, "dcbz rA should be 15");
     CHECK(inst.rB == 16, "dcbz rB should be 16");
 
+    inst = ppc_decode(0xB8030000, BASE);
+    CHECK(inst.op == PPC_OP_LMW, "lmw r0, 0(r3) should decode");
+    CHECK(inst.rD == 0, "lmw rD should be 0");
+    CHECK(inst.rA == 3, "lmw rA should be 3");
+    CHECK(inst.simm == 0, "lmw offset should be 0");
+
     inst = ppc_decode(0xE0243000, BASE);
     CHECK(inst.op == PPC_OP_PSQ_L, "psq_l should decode");
     CHECK(inst.rD == 1, "psq_l fD should be 1");
@@ -569,8 +575,6 @@ static int test_invalid_new_forms(void) {
         0xC4800000u, /* lfsu with rA = 0 */
         0xE4A00000u, /* psq_lu with rA = 0 */
         0xF4A00000u, /* psq_stu with rA = 0 */
-        0xBA940000u, /* lmw with rA in loaded range */
-        0xB8000000u, /* lmw with rD = rA = 0 */
         0x7CE724AAu, /* lswi with rA in loaded range */
         0x7C0024AAu, /* lswi with rD = rA = 0 */
         0x7D29AC2Au, /* lswx with rD = rA */

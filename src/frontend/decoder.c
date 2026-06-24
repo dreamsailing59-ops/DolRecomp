@@ -880,12 +880,7 @@ PPCInst ppc_decode(u32 raw, u32 address) {
     case 43: decode_d_rt_ra_update(&inst, PPC_OP_LHAU, raw); break;
     case 44: decode_d_rs_ra(&inst, PPC_OP_STH, raw); break;
     case 45: decode_d_rs_ra_update(&inst, PPC_OP_STHU, raw); break;
-    case 46:
-        if (reg_in_wrapped_range(PPC_RD(raw), 32u - PPC_RD(raw), PPC_RA(raw)))
-            inst.op = PPC_OP_UNKNOWN;
-        else
-            decode_d_rt_ra(&inst, PPC_OP_LMW, raw);
-        break;
+    case 46: decode_d_rt_ra(&inst, PPC_OP_LMW, raw); break;
     case 47: decode_d_rs_ra(&inst, PPC_OP_STMW, raw); break;
     case 48: decode_d_rt_ra(&inst, PPC_OP_LFS, raw); break;
     case 49: decode_d_frt_ra_update(&inst, PPC_OP_LFSU, raw); break;

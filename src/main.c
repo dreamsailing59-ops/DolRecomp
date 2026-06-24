@@ -997,6 +997,12 @@ static void emit_dispatch_helpers(FILE* out, const FunctionList* funcs, u32 entr
     fprintf(out, "}\n");
 }
 
+typedef enum {
+    EMBEDDED_DATA_NONE = 0,
+    EMBEDDED_DATA_DOL,
+    EMBEDDED_DATA_RPX
+} EmbeddedDataMode;
+
 typedef struct {
     const char* label;
     const char* name;
@@ -1005,11 +1011,52 @@ typedef struct {
     u32 file_offset;
     u32 address;
     u32 size;
-    int allow_embedded_data;
+    EmbeddedDataMode embedded_data_mode;
 } LoadedCodeSection;
 
 static int rpx_embedded_data_word(u32 raw) {
     return raw == 0x00400000u || raw == 0x00600000u;
+}
+
+static int word_bytes_are_text(u32 raw) {
+    u8 bytes[4] = {
+        (u8)(raw >> 24),
+        (u8)(raw >> 16),
+        (u8)(raw >> 8),
+        (u8)raw,
+    };
+
+    int printable = 0;
+    for (u32 i = 0; i < 4; i++) {
+        if (bytes[i] >= 0x20 && bytes[i] <= 0x7Eu) {
+            printable++;
+        } else if (bytes[i] != 0) {
+            return 0;
+        }
+    }
+
+    return printable >= 3;
+}
+
+static int dol_embedded_data_word(u32 raw) {
+    if (raw == 0)
+        return 1;
+    if ((raw >> 26) == 0)
+        return 1;
+    if (word_bytes_are_text(raw))
+        return 1;
+    return 0;
+}
+
+static int embedded_data_word(EmbeddedDataMode mode, u32 raw) {
+    switch (mode) {
+    case EMBEDDED_DATA_DOL:
+        return dol_embedded_data_word(raw);
+    case EMBEDDED_DATA_RPX:
+        return rpx_embedded_data_word(raw);
+    default:
+        return 0;
+    }
 }
 
 typedef struct {
@@ -1479,8 +1526,7 @@ static int emit_code_sections_split(const LoadedCodeSection* sections,
             u32 addr = base_addr + i * 4;
             insts[i] = ppc_decode(raw, addr);
             if (insts[i].op == PPC_OP_UNKNOWN &&
-                section->allow_embedded_data &&
-                rpx_embedded_data_word(raw)) {
+                embedded_data_word(section->embedded_data_mode, raw)) {
                 insts[i].embedded_data = true;
             }
             decoded++;
@@ -1623,7 +1669,7 @@ static int emit_dol_split(const DOLFile* dol, const char* output_path,
         section->file_offset = dol->header.text_offsets[i];
         section->address = dol->header.text_addresses[i];
         section->size = dol->header.text_sizes[i];
-        section->allow_embedded_data = 0;
+        section->embedded_data_mode = EMBEDDED_DATA_DOL;
     }
 
     return emit_code_sections_split(sections, section_count, output_path, cpu,
@@ -1645,7 +1691,7 @@ static int emit_rpx_split(const RPXFile* rpx, const char* output_path,
         section->file_offset = code->offset;
         section->address = code->address;
         section->size = code->size;
-        section->allow_embedded_data = 1;
+        section->embedded_data_mode = EMBEDDED_DATA_RPX;
     }
 
     return emit_code_sections_split(sections, rpx->code_section_count,

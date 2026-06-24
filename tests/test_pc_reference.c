@@ -2000,6 +2000,15 @@ static void test_loads(CPUState* cpu) {
     exec_raw(cpu, 0xBA810034, BASE);
     check_eq(cpu->gpr[20], 0xA0000014u, "lmw first register");
     check_eq(cpu->gpr[31], 0xA000001Fu, "lmw last register");
+
+    cpu_reset(cpu);
+    cpu->gpr[3] = base;
+    for (u32 r = 0; r < 32; r++)
+        mem_write32(cpu, base + r * 4, 0xC0000000u | r);
+    exec_raw(cpu, 0xB8030000, BASE);
+    check_eq(cpu->gpr[0], 0xC0000000u, "lmw r0 first register");
+    check_eq(cpu->gpr[3], 0xC0000003u, "lmw r0 can overwrite base register");
+    check_eq(cpu->gpr[31], 0xC000001Fu, "lmw r0 last register");
 }
 
 static void test_stores(CPUState* cpu) {
