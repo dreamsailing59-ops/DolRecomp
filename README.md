@@ -8,10 +8,11 @@ The current project is CPU only. You will need to supply your own runtime.
 
 - GameCube/Wii DOL loading works.
 - Wii U RPX loading works for executable sections. Compressed RPX sections need zlib.
-- The decoder currently recognizes 236 PowerPC/Gekko/Broadway/Espresso opcodes.
+- DOL/RPX frontends validate executable entry points before codegen.
+- The decoder currently recognizes 236 PowerPC/Gekko/Broadway/Espresso opcodes. (Espresso may need more looking at)
 - The backend emits C in split chunks with `-jN` worker support.
 - Generated dispatch can hand known function addresses to host patches before entering compiled code.
-- The generated C is a compile target and CPU behavior test surface, not a full game runtime yet.
+- The generated C is a compile target only, no runtime
 
 ## Build
 
@@ -37,6 +38,9 @@ devkitPro is highly recommended for Wii U recomps.
 
 Set up the local title database if you want Wii title names in CLI output. Setup also offers to download Wiimms ISO Tools if `wit` is missing:
 
+<sub>this was just a fun extra thing, just run in gamecube mode if you want to skip it</sub>
+
+
 ```sh
 dolrecomp.exe --setup
 ```
@@ -58,7 +62,10 @@ Wii U uses the Espresso CPU profile and takes an RPX:
 ```sh
 dolrecomp.exe --cpu espresso path\to\main.rpx build
 ```
+
+
 You cannot specify --gamecube while using espresso.
+
 
 Disc extraction is available as a subcommand for future installer work. It accepts `.iso` and `.wbfs` only:
 
@@ -114,23 +121,18 @@ docs/           project notes
 tools/          optional developer utilities
 ```
 
-## Legal Notes
-
-DolRecomp is GPLv3. Copied code must be license compatible.
-
 ## Contribution
 
-External contributions are paused while CPU behavior and codegen settle. Forks are welcome.
+Forks are welcome. Contribution will not be accepted at the very moment, because this codebase changes rapidly.
 
-## Notice
+# Notices
 
-This repo is still not finished, but it's good enough to work with now. Any problems you run into with it can be reported in the Discord with it's relative channel (#dolrecomp)
+- This repo is still not finished, but it's good enough to work with now. Any problems you run into with it can be reported in the Discord with it's relative channel (#dolrecomp)
 
+- SMC is currently *unhandled*. You will need to patch the functions manually. DolRecomp will highlight suspicious 
+instructions for review. Patching it out at analysis-time may silently break real behavior, so we're leaving that alone
 
-## SMC (Self-Modifying Code)
+- Wii U support is not actively being worked on, it was just used as a small experiment that kinda ended up working out 
+pretty well on the 1 game I tried it on (Kirby and the Rainbow Curse). Don't expect it to work super good or anything
 
-SMC is currently *unhandled*. You will need to patch the functions manually. DolRecomp will highlight suspicious instructions for review. Patching it out at analysis-time might silently break real behavior.
-
-## Wii U support 
-
-Wii U support is largely unimplemented, it was an experiment of "how much of this already works with the Wii U" thing and not "let's make a Wii U recompiler." It's probably going to stay this way until I can find out what to do wih it
+<sub>though it may be picked up in the future<sub>

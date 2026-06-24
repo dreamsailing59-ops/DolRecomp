@@ -73,6 +73,13 @@ add_executable(test_cross_check
 target_include_directories(test_cross_check PRIVATE src)
 add_test(NAME cross_check COMMAND test_cross_check)
 
+add_executable(test_dol
+    tests/test_dol.c
+    src/frontend/dol.c
+)
+target_include_directories(test_dol PRIVATE src)
+add_test(NAME dol COMMAND test_dol)
+
 add_executable(test_rpx
     tests/test_rpx.c
     src/frontend/rpx.c

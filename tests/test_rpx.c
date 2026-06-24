@@ -42,7 +42,8 @@ static void write_section(u8* p, u32 name, u32 type, u32 flags, u32 address,
     write_be32(p + 36, 0);
 }
 
-static int write_sample_rpx(const char* path, int compressed_text) {
+static int write_sample_rpx(const char* path, int compressed_text,
+                            u32 entry_point) {
     u8 file[0x140];
     memset(file, 0, sizeof(file));
 
@@ -53,7 +54,7 @@ static int write_sample_rpx(const char* path, int compressed_text) {
     write_be16_local(file + 16, ELF_TYPE_RPL);
     write_be16_local(file + 18, ELF_MACHINE_PPC);
     write_be32(file + 20, 1);
-    write_be32(file + 24, 0x02000000u);
+    write_be32(file + 24, entry_point);
     write_be32(file + 32, 0x80);
     write_be16_local(file + 40, ELF_HEADER_SIZE);
     write_be16_local(file + 46, ELF_SECTION_SIZE);
@@ -86,7 +87,8 @@ static int write_sample_rpx(const char* path, int compressed_text) {
 
 static int test_uncompressed_rpx(void) {
     const char* path = "test_uncompressed.rpx";
-    CHECK(write_sample_rpx(path, 0), "failed to write sample RPX");
+    CHECK(write_sample_rpx(path, 0, 0x02000000u),
+          "failed to write sample RPX");
 
     RPXFile rpx;
     CHECK(rpx_load(&rpx, path), "failed to load sample RPX");
@@ -111,7 +113,8 @@ static int test_uncompressed_rpx(void) {
 
 static int test_compressed_rejects_bad_stream(void) {
     const char* path = "test_compressed_bad.rpx";
-    CHECK(write_sample_rpx(path, 1), "failed to write compressed sample RPX");
+    CHECK(write_sample_rpx(path, 1, 0x02000000u),
+          "failed to write compressed sample RPX");
 
     RPXFile rpx;
     int loaded = rpx_load(&rpx, path);
@@ -122,10 +125,40 @@ static int test_compressed_rejects_bad_stream(void) {
     return 1;
 }
 
+static int test_entry_outside_code_rejected(void) {
+    const char* path = "test_entry_outside.rpx";
+    CHECK(write_sample_rpx(path, 0, 0x02001000u),
+          "failed to write sample RPX");
+
+    RPXFile rpx;
+    int loaded = rpx_load(&rpx, path);
+    if (loaded)
+        rpx_free(&rpx);
+    remove(path);
+    CHECK(!loaded, "RPX entry outside executable code should be rejected");
+    return 1;
+}
+
+static int test_unaligned_entry_rejected(void) {
+    const char* path = "test_unaligned_entry.rpx";
+    CHECK(write_sample_rpx(path, 0, 0x02000002u),
+          "failed to write sample RPX");
+
+    RPXFile rpx;
+    int loaded = rpx_load(&rpx, path);
+    if (loaded)
+        rpx_free(&rpx);
+    remove(path);
+    CHECK(!loaded, "unaligned RPX entry should be rejected");
+    return 1;
+}
+
 int main(void) {
     int ok = 1;
     ok &= test_uncompressed_rpx();
     ok &= test_compressed_rejects_bad_stream();
+    ok &= test_entry_outside_code_rejected();
+    ok &= test_unaligned_entry_rejected();
 
     if (!ok)
         return 1;

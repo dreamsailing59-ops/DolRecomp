@@ -38,6 +38,10 @@ static int range_fits(u32 offset, u32 size, u32 total) {
     return offset <= total && size <= total - offset;
 }
 
+static int address_in_range(u32 address, u32 base, u32 size) {
+    return size != 0 && address >= base && address - base < size;
+}
+
 static const char* section_name_at(const u8* names, u32 names_size, u32 offset) {
     if (offset >= names_size)
         return NULL;
@@ -198,6 +202,12 @@ bool rpx_load(RPXFile* rpx, const char* path) {
     }
 
     rpx->entry_point = read_be32(h + 24);
+    if ((rpx->entry_point & 3u) != 0) {
+        fprintf(stderr, "error: RPX entry point is not instruction-aligned\n");
+        rpx_free(rpx);
+        return false;
+    }
+
     u32 section_offset = read_be32(h + 32);
     u16 section_entry_size = read_be16(h + 46);
     rpx->section_count = read_be16(h + 48);
@@ -303,6 +313,22 @@ bool rpx_load(RPXFile* rpx, const char* path) {
 
     if (rpx->code_section_count == 0) {
         fprintf(stderr, "error: RPX has no executable code sections\n");
+        rpx_free(rpx);
+        return false;
+    }
+
+    int entry_in_code = 0;
+    for (u32 i = 0; i < rpx->code_section_count; i++) {
+        const RPXCodeSection* section = &rpx->code_sections[i];
+        if (address_in_range(rpx->entry_point, section->address, section->size)) {
+            entry_in_code = 1;
+            break;
+        }
+    }
+    if (!entry_in_code) {
+        fprintf(stderr,
+                "error: RPX entry point 0x%08X is not inside an executable section\n",
+                rpx->entry_point);
         rpx_free(rpx);
         return false;
     }
