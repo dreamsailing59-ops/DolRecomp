@@ -4,6 +4,20 @@ DolRecomp is a static recompiler for GameCube, Wii, and experimental Wii U CPU c
 
 The current project is CPU only. You will need to supply your own runtime.
 
+## Important!
+
+GitHub Issues are for reproducible bugs, build failures, incorrect output, missing instruction support, and other actionable problems with the tool
+
+Please include enough information to reproduce the issue, such as:
+- the input type being tested(Dol, RPX)
+- the failing instruction or function, if known
+- the commit/build used
+- steps to reproduce
+
+Vague reports such as "it doesn't work" are not actionable and may be closed. Issues are not the place for non-technical complaints or drama.
+
+apparently this wasn't as obvious as i'd hope it to be..
+
 ## Status
 
 - GameCube/Wii DOL loading works.
