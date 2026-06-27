@@ -23,6 +23,8 @@ bool cpu_init(CPUState* cpu) {
         return false;
     }
 
+    cpu->spr[287] = PPC_GEKKO_PVR;
+
     return true;
 }
 
@@ -86,6 +88,8 @@ void cpu_reset(CPUState* cpu) {
         memset(cpu->ram, 0, cpu->ram_size);
     if (cpu->mem2)
         memset(cpu->mem2, 0, cpu->mem2_size);
+
+    cpu->spr[287] = PPC_GEKKO_PVR;
 }
 
 static u8* resolve_addr(CPUState* cpu, u32 addr, u32* avail) {
@@ -333,6 +337,176 @@ u32 ppc_mftb(CPUState* cpu, u16 tbr, u32 cia) {
 
     ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
     return 0;
+}
+
+enum {
+    SPR_READ = 1u << 0,
+    SPR_WRITE = 1u << 1,
+    SPR_STORAGE = 1u << 2,
+    SPR_RW = SPR_READ | SPR_WRITE | SPR_STORAGE,
+    SPR_RO = SPR_READ | SPR_STORAGE,
+};
+
+static const u8 ppc_spr_access[1024] = {
+    [22] = SPR_RW,
+    [25] = SPR_RW,
+    [272] = SPR_RW,
+    [273] = SPR_RW,
+    [274] = SPR_RW,
+    [275] = SPR_RW,
+    [287] = SPR_RO,
+    [528] = SPR_RW,
+    [529] = SPR_RW,
+    [530] = SPR_RW,
+    [531] = SPR_RW,
+    [532] = SPR_RW,
+    [533] = SPR_RW,
+    [534] = SPR_RW,
+    [535] = SPR_RW,
+    [536] = SPR_RW,
+    [537] = SPR_RW,
+    [538] = SPR_RW,
+    [539] = SPR_RW,
+    [540] = SPR_RW,
+    [541] = SPR_RW,
+    [542] = SPR_RW,
+    [543] = SPR_RW,
+    [921] = SPR_RW,
+    [922] = SPR_RW,
+    [923] = SPR_RW,
+    [936] = SPR_READ | SPR_WRITE,
+    [937] = SPR_READ | SPR_WRITE,
+    [938] = SPR_READ | SPR_WRITE,
+    [939] = SPR_READ | SPR_WRITE,
+    [940] = SPR_READ | SPR_WRITE,
+    [941] = SPR_READ | SPR_WRITE,
+    [942] = SPR_READ | SPR_WRITE,
+    [952] = SPR_RW,
+    [953] = SPR_RW,
+    [954] = SPR_RW,
+    [955] = SPR_RW,
+    [956] = SPR_RW,
+    [957] = SPR_RW,
+    [958] = SPR_RW,
+    [1008] = SPR_RW,
+    [1009] = SPR_RW,
+    [1010] = SPR_RW,
+    [1013] = SPR_RW,
+    [1017] = SPR_RW,
+    [1019] = SPR_RW,
+    [1020] = SPR_RW,
+    [1021] = SPR_RW,
+    [1022] = SPR_RW,
+};
+
+static u16 ppc_spr_storage_index(u16 spr) {
+    switch (spr) {
+    case 936: return 952;
+    case 937: return 953;
+    case 938: return 954;
+    case 939: return 955;
+    case 940: return 956;
+    case 941: return 957;
+    case 942: return 958;
+    default: return spr;
+    }
+}
+
+u32 ppc_mfspr(CPUState* cpu, u16 spr, u32 cia) {
+    switch (spr) {
+    case 1:
+        return cpu->xer;
+    case 8:
+        return cpu->lr;
+    case 9:
+        return cpu->ctr;
+    case 18:
+        return cpu->dsisr;
+    case 19:
+        return cpu->dar;
+    case 26:
+        return cpu->srr0;
+    case 27:
+        return cpu->srr1;
+    case 282:
+        return cpu->ear;
+    case 912:
+    case 913:
+    case 914:
+    case 915:
+    case 916:
+    case 917:
+    case 918:
+    case 919:
+        return cpu->gqr[spr - 912];
+    case 920:
+        return cpu->hid2;
+    default:
+        break;
+    }
+
+    if (spr < 1024 && (ppc_spr_access[spr] & SPR_READ))
+        return cpu->spr[ppc_spr_storage_index(spr)];
+
+    ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
+    return 0;
+}
+
+void ppc_mtspr(CPUState* cpu, u16 spr, u32 value, u32 cia) {
+    switch (spr) {
+    case 1:
+        cpu->xer = value;
+        return;
+    case 8:
+        cpu->lr = value;
+        return;
+    case 9:
+        cpu->ctr = value;
+        return;
+    case 18:
+        cpu->dsisr = value;
+        return;
+    case 19:
+        cpu->dar = value;
+        return;
+    case 26:
+        cpu->srr0 = value;
+        return;
+    case 27:
+        cpu->srr1 = value;
+        return;
+    case 282:
+        cpu->ear = value;
+        return;
+    case 284:
+        cpu->timebase = (cpu->timebase & 0xFFFFFFFF00000000ull) | value;
+        return;
+    case 285:
+        cpu->timebase = ((u64)value << 32) | (cpu->timebase & 0xFFFFFFFFull);
+        return;
+    case 912:
+    case 913:
+    case 914:
+    case 915:
+    case 916:
+    case 917:
+    case 918:
+    case 919:
+        cpu->gqr[spr - 912] = value;
+        return;
+    case 920:
+        cpu->hid2 = value;
+        return;
+    default:
+        break;
+    }
+
+    if (spr < 1024 && (ppc_spr_access[spr] & SPR_WRITE)) {
+        cpu->spr[ppc_spr_storage_index(spr)] = value;
+        return;
+    }
+
+    ppc_program_exception(cpu, PPC_PROGRAM_ILLEGAL, cia);
 }
 
 static f32 f32_value(u32 bits) {

@@ -36,6 +36,8 @@
 #define PPC_HID2_DCHERR 0x00800000u
 #define PPC_HID2_DCHEE  0x00080000u
 
+#define PPC_GEKKO_PVR 0x00083214u
+
 typedef struct CPUState CPUState;
 typedef u64 (*PPCExternalRead)(CPUState* cpu, u32 ea, u8 size);
 typedef void (*PPCExternalWrite)(CPUState* cpu, u32 ea, u64 value, u8 size);
@@ -64,6 +66,7 @@ struct CPUState {
     u64 timebase;
     u32 sr[16];
     u32 gqr[8];
+    u32 spr[1024];
     u32 exception;
     u32 program_exception;
     u32 tlb_last_vps;
@@ -126,6 +129,8 @@ void ppc_system_call_exception(CPUState* cpu, u32 cia);
 void ppc_dsi_exception(CPUState* cpu, u32 ea, u32 cia, u32 dsisr);
 void ppc_alignment_exception(CPUState* cpu, u32 ea, u32 cia);
 u32 ppc_mftb(CPUState* cpu, u16 tbr, u32 cia);
+u32 ppc_mfspr(CPUState* cpu, u16 spr, u32 cia);
+void ppc_mtspr(CPUState* cpu, u16 spr, u32 value, u32 cia);
 void ppc_rfi(CPUState* cpu, u32 cia);
 void ppc_dcbz_l(CPUState* cpu, u32 ea, u32 cia);
 void ppc_psq_load(CPUState* cpu, u8 frD, u32 ea, bool w, u8 gqr, bool indexed, u32 cia);

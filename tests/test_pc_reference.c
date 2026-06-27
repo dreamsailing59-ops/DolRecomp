@@ -1523,26 +1523,11 @@ static void exec_inst(CPUState* cpu, const PPCInst* inst) {
         break;
 
     case PPC_OP_MFSPR:
-        if (inst->spr == 1) cpu->gpr[inst->rD] = cpu->xer;
-        else if (inst->spr == 8) cpu->gpr[inst->rD] = cpu->lr;
-        else if (inst->spr == 9) cpu->gpr[inst->rD] = cpu->ctr;
-        else if (inst->spr == 26) cpu->gpr[inst->rD] = cpu->srr0;
-        else if (inst->spr == 27) cpu->gpr[inst->rD] = cpu->srr1;
-        else if (inst->spr == 268 || inst->spr == 269) cpu->gpr[inst->rD] = ppc_mftb(cpu, inst->spr, inst->address);
-        else if (inst->spr == 282) cpu->gpr[inst->rD] = cpu->ear;
-        else if (inst->spr >= 912 && inst->spr <= 919) cpu->gpr[inst->rD] = cpu->gqr[inst->spr - 912];
-        else if (inst->spr == 920) cpu->gpr[inst->rD] = cpu->hid2;
+        cpu->gpr[inst->rD] = ppc_mfspr(cpu, inst->spr, inst->address);
         break;
 
     case PPC_OP_MTSPR:
-        if (inst->spr == 1) cpu->xer = cpu->gpr[inst->rS];
-        else if (inst->spr == 8) cpu->lr = cpu->gpr[inst->rS];
-        else if (inst->spr == 9) cpu->ctr = cpu->gpr[inst->rS];
-        else if (inst->spr == 26) cpu->srr0 = cpu->gpr[inst->rS];
-        else if (inst->spr == 27) cpu->srr1 = cpu->gpr[inst->rS];
-        else if (inst->spr == 282) cpu->ear = cpu->gpr[inst->rS];
-        else if (inst->spr >= 912 && inst->spr <= 919) cpu->gqr[inst->spr - 912] = cpu->gpr[inst->rS];
-        else if (inst->spr == 920) cpu->hid2 = cpu->gpr[inst->rS];
+        ppc_mtspr(cpu, inst->spr, cpu->gpr[inst->rS], inst->address);
         break;
 
     default:
@@ -3170,6 +3155,33 @@ static void check_cr_logic(CPUState* cpu, const char* name, u32 xo,
     }
 }
 
+static void check_spr_roundtrip(CPUState* cpu, u16 spr, u32 value) {
+    char label[96];
+
+    cpu->exception = 0;
+    cpu->program_exception = 0;
+    cpu->gpr[10] = value;
+    exec_raw(cpu, make_xfx(467, 10, spr), BASE);
+    snprintf(label, sizeof(label), "mtspr %u does not trap", spr);
+    check_eq(cpu->exception, 0, label);
+
+    cpu->gpr[11] = 0;
+    exec_raw(cpu, make_xfx(339, 11, spr), BASE + 4);
+    snprintf(label, sizeof(label), "mfspr %u does not trap", spr);
+    check_eq(cpu->exception, 0, label);
+
+    snprintf(label, sizeof(label), "mtspr/mfspr %u roundtrip", spr);
+    check_eq(cpu->gpr[11], value, label);
+}
+
+static void check_illegal_spr(CPUState* cpu, u32 xo, u16 spr, const char* name) {
+    cpu_reset(cpu);
+    cpu->gpr[10] = 0xCAFEBABEu;
+    exec_raw(cpu, make_xfx(xo, 10, spr), BASE);
+    check_eq(cpu->exception & PPC_EXC_PROGRAM, PPC_EXC_PROGRAM, name);
+    check_eq(cpu->program_exception & PPC_PROGRAM_ILLEGAL, PPC_PROGRAM_ILLEGAL, name);
+}
+
 static void test_branches_cr_spr(CPUState* cpu) {
     printf("--- branches / CR / SPR ---\n");
 
@@ -3258,6 +3270,46 @@ static void test_branches_cr_spr(CPUState* cpu) {
     cpu->gpr[10] = 0;
     exec_raw(cpu, make_xfx(339, 10, 1), BASE);
     check_eq(cpu->gpr[10], XER_CA, "mfspr/mfxer reads XER");
+
+    static const u16 gekko_rw_sprs[] = {
+        18, 19, 22, 25, 26, 27, 272, 273, 274, 275, 282,
+        528, 529, 530, 531, 532, 533, 534, 535,
+        536, 537, 538, 539, 540, 541, 542, 543,
+        912, 913, 914, 915, 916, 917, 918, 919, 920, 921, 922, 923,
+        936, 937, 938, 939, 940, 941, 942,
+        952, 953, 954, 955, 956, 957, 958,
+        1008, 1009, 1010, 1013, 1017, 1019, 1020, 1021, 1022,
+    };
+
+    cpu_reset(cpu);
+    for (size_t i = 0; i < sizeof(gekko_rw_sprs) / sizeof(gekko_rw_sprs[0]); i++) {
+        u16 spr = gekko_rw_sprs[i];
+        u32 value = 0xA5000000u ^ ((u32)spr << 8) ^ (u32)i;
+        check_spr_roundtrip(cpu, spr, value);
+    }
+
+    cpu_reset(cpu);
+    exec_raw(cpu, make_xfx(339, 10, 287), BASE);
+    check_eq(cpu->gpr[10], PPC_GEKKO_PVR, "mfspr reads Gekko PVR");
+
+    cpu_reset(cpu);
+    cpu->timebase = 0xAABBCCDD11223344ull;
+    cpu->gpr[10] = 0x55667788;
+    exec_raw(cpu, make_xfx(467, 10, 284), BASE);
+    check_eq64(cpu->timebase, 0xAABBCCDD55667788ull, "mtspr TBL writes timebase low");
+    cpu->gpr[10] = 0x99AABBCC;
+    exec_raw(cpu, make_xfx(467, 10, 285), BASE);
+    check_eq64(cpu->timebase, 0x99AABBCC55667788ull, "mtspr TBU writes timebase high");
+    exec_raw(cpu, make_xfx(371, 11, 268), BASE);
+    check_eq(cpu->gpr[11], 0x55667788, "mftb reads TBL");
+    exec_raw(cpu, make_xfx(371, 12, 269), BASE);
+    check_eq(cpu->gpr[12], 0x99AABBCC, "mftbu reads TBU");
+
+    check_illegal_spr(cpu, 467, 287, "mtspr PVR traps");
+    check_illegal_spr(cpu, 339, 268, "mfspr TBL alias traps");
+    check_illegal_spr(cpu, 339, 284, "mfspr TBL write alias traps");
+    check_illegal_spr(cpu, 339, 1023, "mfspr undefined SPR traps");
+    check_illegal_spr(cpu, 467, 1023, "mtspr undefined SPR traps");
 }
 
 static void test_host_hooks(CPUState* cpu) {

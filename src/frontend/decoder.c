@@ -1251,9 +1251,36 @@ static const char* spr_name(u16 spr) {
     case 1: return "xer";
     case 8: return "lr";
     case 9: return "ctr";
+    case 18: return "dsisr";
+    case 19: return "dar";
+    case 22: return "dec";
+    case 25: return "sdr1";
     case 26: return "srr0";
     case 27: return "srr1";
+    case 272: return "sprg0";
+    case 273: return "sprg1";
+    case 274: return "sprg2";
+    case 275: return "sprg3";
     case 282: return "ear";
+    case 284: return "tbl";
+    case 285: return "tbu";
+    case 287: return "pvr";
+    case 528: return "ibat0u";
+    case 529: return "ibat0l";
+    case 530: return "ibat1u";
+    case 531: return "ibat1l";
+    case 532: return "ibat2u";
+    case 533: return "ibat2l";
+    case 534: return "ibat3u";
+    case 535: return "ibat3l";
+    case 536: return "dbat0u";
+    case 537: return "dbat0l";
+    case 538: return "dbat1u";
+    case 539: return "dbat1l";
+    case 540: return "dbat2u";
+    case 541: return "dbat2l";
+    case 542: return "dbat3u";
+    case 543: return "dbat3l";
     case 912: return "gqr0";
     case 913: return "gqr1";
     case 914: return "gqr2";
@@ -1263,6 +1290,32 @@ static const char* spr_name(u16 spr) {
     case 918: return "gqr6";
     case 919: return "gqr7";
     case 920: return "hid2";
+    case 921: return "wpar";
+    case 922: return "dmau";
+    case 923: return "dmal";
+    case 936: return "ummcr0";
+    case 937: return "upmc1";
+    case 938: return "upmc2";
+    case 939: return "usia";
+    case 940: return "ummcr1";
+    case 941: return "upmc3";
+    case 942: return "upmc4";
+    case 952: return "mmcr0";
+    case 953: return "pmc1";
+    case 954: return "pmc2";
+    case 955: return "sia";
+    case 956: return "mmcr1";
+    case 957: return "pmc3";
+    case 958: return "pmc4";
+    case 1008: return "hid0";
+    case 1009: return "hid1";
+    case 1010: return "iabr";
+    case 1013: return "dabr";
+    case 1017: return "l2cr";
+    case 1019: return "ictc";
+    case 1020: return "thrm1";
+    case 1021: return "thrm2";
+    case 1022: return "thrm3";
     default: return NULL;
     }
 }
@@ -1867,6 +1920,8 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
 
     case PPC_OP_MFSPR: {
         const char* name = spr_name(inst->spr);
+        if (inst->spr == 284 || inst->spr == 285)
+            name = NULL;
         if (name)
             snprintf(buf, buf_size, "mf%s    r%u", name, inst->rD);
         else
@@ -1885,6 +1940,8 @@ char* ppc_disasm(char* buf, size_t buf_size, const PPCInst* inst) {
 
     case PPC_OP_MTSPR: {
         const char* name = spr_name(inst->spr);
+        if (inst->spr == 287)
+            name = NULL;
         if (name)
             snprintf(buf, buf_size, "mt%s    r%u", name, inst->rS);
         else
