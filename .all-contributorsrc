@@ -1,0 +1,13 @@
+{
+  "projectName": "DolRecomp",
+  "projectOwner": "siahisaforker",
+  "repoType": "github",
+  "repoHost": "https://github.com/ExpansionPak/DolRecomp",
+  "files": [
+    "CONTRIBUTORS.md"
+  ],
+  "imageSize": 100,
+  "commit": true,
+  "contributorsPerLine": 7,
+  "contributors": []
+}
