@@ -137,6 +137,10 @@ add_executable(test_jumptables tests/test_jumptables.c)
 target_link_libraries(test_jumptables PRIVATE dr_backend dr_cpu)
 add_test(NAME jumptables COMMAND test_jumptables)
 
+add_executable(test_dispatch tests/test_dispatch.c)
+target_link_libraries(test_dispatch PRIVATE dr_backend)
+add_test(NAME dispatch COMMAND test_dispatch)
+
 add_executable(test_codegen_emit tests/test_codegen_emit.c)
 target_link_libraries(test_codegen_emit PRIVATE dr_backend)
 add_test(NAME codegen_compile

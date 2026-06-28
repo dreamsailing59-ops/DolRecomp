@@ -35,16 +35,27 @@ int function_list_add(FunctionList* list, u32 start, u32 end) {
 void emit_dispatch_helpers(FILE* out, const FunctionList* funcs, u32 entry_point) {
     fprintf(out, "\n#define DOLRECOMP_ENTRY_POINT 0x%08Xu\n", entry_point);
     fprintf(out, "\ntypedef void (*DolRecompFunction)(CPUState* ctx);\n");
-    fprintf(out, "\nstatic inline int dolrecomp_call(CPUState* ctx, u32 address) {\n");
-    fprintf(out, "    if (ppc_host_call(ctx, address)) return 1;\n");
+    fprintf(out, "\nstatic inline DolRecompFunction dolrecomp_find_original(u32 address) {\n");
     for (u32 i = 0; i < funcs->count; i++) {
         fprintf(out,
                 "    if (address >= 0x%08Xu && address < 0x%08Xu && "
-                "((address - 0x%08Xu) & 3u) == 0u) { func_%08X(ctx); return 1; }\n",
+                "((address - 0x%08Xu) & 3u) == 0u) return func_%08X;\n",
                 funcs->ranges[i].start, funcs->ranges[i].end,
                 funcs->ranges[i].start, funcs->ranges[i].start);
     }
-    fprintf(out, "    return 0;\n");
+    fprintf(out, "    return NULL;\n");
+    fprintf(out, "}\n");
+    fprintf(out, "\nstatic inline int dolrecomp_call_original(CPUState* ctx, u32 address) {\n");
+    fprintf(out, "    DolRecompFunction fn = dolrecomp_find_original(address);\n");
+    fprintf(out, "    if (!fn) return 0;\n");
+    fprintf(out, "    ctx->pc = address;\n");
+    fprintf(out, "    fn(ctx);\n");
+    fprintf(out, "    return 1;\n");
+    fprintf(out, "}\n");
+    fprintf(out, "\nstatic inline int dolrecomp_call(CPUState* ctx, u32 address) {\n");
+    fprintf(out, "    ctx->pc = address;\n");
+    fprintf(out, "    if (ppc_host_call(ctx, address)) return 1;\n");
+    fprintf(out, "    return dolrecomp_call_original(ctx, address);\n");
     fprintf(out, "}\n");
     fprintf(out, "\nstatic inline int dolrecomp_run_blocks(CPUState* ctx, u32 max_blocks) {\n");
     fprintf(out, "    u32 blocks = 0;\n");
@@ -56,4 +67,3 @@ void emit_dispatch_helpers(FILE* out, const FunctionList* funcs, u32 entry_point
     fprintf(out, "    return 1;\n");
     fprintf(out, "}\n");
 }
-

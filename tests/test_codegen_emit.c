@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "../src/backend/dispatch.h"
 #include "../src/backend/emitter.h"
 #include "../src/common/types.h"
 #include "../src/frontend/decoder.h"
@@ -114,6 +115,18 @@ int main(int argc, char** argv) {
     external_branch[1] = ppc_decode(0x41821000, BASE + 0x1004);
     external_branch[2] = ppc_decode(0x4E800020, BASE + 0x1008);
     emit_function(out, external_branch, 3, BASE + 0x1000);
+
+    FunctionList funcs = {0};
+    if (!function_list_add(&funcs, BASE, BASE + (u32)count * 4u) ||
+        !function_list_add(&funcs, BASE + 0x1000, BASE + 0x100C)) {
+        function_list_free(&funcs);
+        free(insts);
+        if (out != stdout) fclose(out);
+        return 1;
+    }
+    emit_dispatch_helpers(out, &funcs, BASE);
+    function_list_free(&funcs);
+
     emit_footer(out);
 
     free(insts);

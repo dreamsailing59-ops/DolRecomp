@@ -26,7 +26,7 @@ apparently this wasn't as obvious as i'd hope it to be..
 - DOL/RPX/REL frontends validate executable entry points before codegen.
 - The decoder currently recognizes 236 PowerPC/Gekko/Broadway/Espresso opcodes. (Espresso may need more looking at)
 - The backend emits C in split chunks with `-jN` worker support.
-- Generated dispatch can hand known function addresses to host patches before entering compiled code.
+- Generated dispatch can hand known function addresses to host replacements before entering compiled code, and replacements can call the original generated function.
 - The generated C is a compile target only, no runtime
 
 ## Build
