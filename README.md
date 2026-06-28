@@ -152,6 +152,8 @@ Forks are welcome. Contribution will not be accepted at the very moment, because
 
 # Notices
 
+- No AI code is used in DolRecomp. This is human hand-made project by a group of passionate developers, who want the best for the Retro Gaming community.
+
 - This repo is still not finished, but it's good enough to work with now. Any problems you run into with it can be reported in the Discord with it's relative channel (#dolrecomp)
 
 - SMC is currently *unhandled*. You will need to patch the functions manually. DolRecomp will highlight suspicious 
