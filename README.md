@@ -41,7 +41,7 @@ From the repo root:
 
 ```sh
 cmake -S . -B build
-cmake --build build --config Release -j 14
+cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
@@ -88,9 +88,9 @@ dolrecomp.exe --gamecube path\to\main.dol build
 Wii DOLs require a six-character title ID:
 
 ```sh
-dolrecomp.exe -j14 path\to\main.dol SUKE01 build
+dolrecomp.exe path\to\main.dol SUKE01 build
 
-./dolrecomp -j14 path/to/main.dol SUKE01 build
+./dolrecomp path/to/main.dol SUKE01 build
 ```
 
 ### REL Modules
