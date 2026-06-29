@@ -36,6 +36,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "MrPoloGit",
+      "name": "Marco Frank",
+      "avatar_url": "https://avatars.githubusercontent.com/u/47047767?v=4",
+      "profile": "https://mrpologit.github.io/",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "commitConvention": "angular"
