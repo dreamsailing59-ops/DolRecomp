@@ -18,6 +18,15 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "dreamsailing59-ops",
+      "name": "smallington",
+      "avatar_url": "https://avatars.githubusercontent.com/u/236145528?v=4",
+      "profile": "https://github.com/dreamsailing59-ops",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "commitConvention": "angular"
